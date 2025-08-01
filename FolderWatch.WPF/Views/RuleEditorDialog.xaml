@@ -17,85 +17,96 @@
                  ResizeMode="CanResizeWithGrip">
 
     <mah:MetroWindow.Resources>
-        <!-- Converter for action type display -->
-        <DataTemplate x:Key="ActionTypeTemplate">
-            <TextBlock Text="{Binding}" />
-        </DataTemplate>
-        
-        <!-- Step detail template for different action types -->
-        <DataTemplate x:Key="StepDetailTemplate" DataType="{x:Type models:RuleStep}">
-            <Grid Margin="10,5">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- MahApps.Metro resource dictionaries -->
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
                 
-                <!-- Action type -->
-                <TextBlock Grid.Column="0" 
-                           Text="{Binding Action}" 
-                           FontWeight="SemiBold"
-                           VerticalAlignment="Center"
-                           MinWidth="80"/>
-                
-                <!-- Action-specific content -->
-                <StackPanel Grid.Column="1" Orientation="Vertical" Margin="10,0">
-                    <!-- Destination for Copy/Move -->
-                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Action}" Value="Copy">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding Action}" Value="Move">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <TextBlock Text="To: " Margin="0,0,5,0" VerticalAlignment="Center"/>
-                        <TextBox Text="{Binding Destination, UpdateSourceTrigger=PropertyChanged}" 
-                                 MinWidth="200" VerticalAlignment="Center"/>
-                        <Button Content="..." 
-                                Command="{Binding DataContext.BrowseDestinationCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                CommandParameter="{Binding}"
-                                Margin="5,0,0,0" 
-                                MinWidth="30"/>
+                <!-- Default theme: Light Blue -->
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Light.Blue.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            
+            <!-- Converter for action type display -->
+            <DataTemplate x:Key="ActionTypeTemplate">
+                <TextBlock Text="{Binding}" />
+            </DataTemplate>
+            
+            <!-- Step detail template for different action types -->
+            <DataTemplate x:Key="StepDetailTemplate" DataType="{x:Type models:RuleStep}">
+                <Grid Margin="10,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Action type -->
+                    <TextBlock Grid.Column="0" 
+                               Text="{Binding Action}" 
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               MinWidth="80"/>
+                    
+                    <!-- Action-specific content -->
+                    <StackPanel Grid.Column="1" Orientation="Vertical" Margin="10,0">
+                        <!-- Destination for Copy/Move -->
+                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Action}" Value="Copy">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Action}" Value="Move">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="To: " Margin="0,0,5,0" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding Destination, UpdateSourceTrigger=PropertyChanged}" 
+                                     MinWidth="200" VerticalAlignment="Center"/>
+                            <Button Content="..." 
+                                    Command="{Binding DataContext.BrowseDestinationCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}"
+                                    Margin="5,0,0,0" 
+                                    MinWidth="30"/>
+                        </StackPanel>
+                        
+                        <!-- New name for Rename/DateTime/Numbering -->
+                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Action}" Value="Rename">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Action}" Value="DateTime">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Action}" Value="Numbering">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="Pattern: " Margin="0,0,5,0" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding NewName, UpdateSourceTrigger=PropertyChanged}" 
+                                     MinWidth="200" VerticalAlignment="Center"/>
+                        </StackPanel>
                     </StackPanel>
                     
-                    <!-- New name for Rename/DateTime/Numbering -->
-                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Action}" Value="Rename">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding Action}" Value="DateTime">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding Action}" Value="Numbering">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <TextBlock Text="Pattern: " Margin="0,0,5,0" VerticalAlignment="Center"/>
-                        <TextBox Text="{Binding NewName, UpdateSourceTrigger=PropertyChanged}" 
-                                 MinWidth="200" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </StackPanel>
-                
-                <!-- Enabled checkbox -->
-                <CheckBox Grid.Column="2" 
-                          IsChecked="{Binding Enabled}"
-                          Content="Enabled"
-                          VerticalAlignment="Center"/>
-            </Grid>
-        </DataTemplate>
+                    <!-- Enabled checkbox -->
+                    <CheckBox Grid.Column="2" 
+                              IsChecked="{Binding Enabled}"
+                              Content="Enabled"
+                              VerticalAlignment="Center"/>
+                </Grid>
+            </DataTemplate>
+        </ResourceDictionary>
     </mah:MetroWindow.Resources>
 
     <Grid>

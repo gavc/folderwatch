@@ -100,7 +100,13 @@ public class RuleEditorViewModel : ViewModelBase
     public string ValidationError
     {
         get => _validationError;
-        private set => SetProperty(ref _validationError, value);
+        private set
+        {
+            if (SetProperty(ref _validationError, value))
+            {
+                OnPropertyChanged(nameof(HasValidationError));
+            }
+        }
     }
 
     /// <summary>
@@ -119,6 +125,11 @@ public class RuleEditorViewModel : ViewModelBase
     /// Whether the dialog was accepted
     /// </summary>
     public bool DialogResult { get; private set; }
+
+    /// <summary>
+    /// Whether there are validation errors
+    /// </summary>
+    public bool HasValidationError => !string.IsNullOrEmpty(ValidationError);
 
     // Commands
     public ICommand AddStepCommand { get; }
@@ -405,6 +416,7 @@ public class RuleEditorViewModel : ViewModelBase
         
         ValidationError = string.Join(Environment.NewLine, errors);
         OnPropertyChanged(nameof(IsValid));
+        OnPropertyChanged(nameof(HasValidationError));
     }
 
     /// <summary>

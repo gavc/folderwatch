@@ -25,6 +25,7 @@ public class MainViewModel : ViewModelBase
     private bool _isMonitoring = false;
     private string _statusMessage = "Ready";
     private bool _liveLogEnabled = true;
+    private Rule? _selectedRule;
 
     // Observable collections for UI binding
     public ObservableCollection<Rule> Rules { get; } = new();
@@ -86,6 +87,22 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _liveLogEnabled, value);
     }
 
+    public Rule? SelectedRule
+    {
+        get => _selectedRule;
+        set
+        {
+            if (SetProperty(ref _selectedRule, value))
+            {
+                // Notify command can-execute changed
+                ((RelayCommand<Rule>)EditRuleCommand).RaiseCanExecuteChanged();
+                ((RelayCommand<Rule>)DeleteRuleCommand).RaiseCanExecuteChanged();
+                ((RelayCommand<Rule>)MoveRuleUpCommand).RaiseCanExecuteChanged();
+                ((RelayCommand<Rule>)MoveRuleDownCommand).RaiseCanExecuteChanged();
+            }
+        }
+    }
+
     public bool CanStartMonitoring => !IsMonitoring && !string.IsNullOrWhiteSpace(SelectedFolderPath) && Directory.Exists(SelectedFolderPath);
     public bool CanStopMonitoring => IsMonitoring;
 
@@ -105,10 +122,10 @@ public class MainViewModel : ViewModelBase
         StartMonitoringCommand = new RelayCommand(async () => await StartMonitoringAsync(), () => CanStartMonitoring);
         StopMonitoringCommand = new RelayCommand(async () => await StopMonitoringAsync(), () => CanStopMonitoring);
         AddRuleCommand = new RelayCommand(AddRule);
-        EditRuleCommand = new RelayCommand<Rule>(EditRule, rule => rule is not null);
-        DeleteRuleCommand = new RelayCommand<Rule>(async rule => await DeleteRuleAsync(rule), rule => rule is not null);
-        MoveRuleUpCommand = new RelayCommand<Rule>(async rule => await MoveRuleUpAsync(rule), CanMoveRuleUp);
-        MoveRuleDownCommand = new RelayCommand<Rule>(async rule => await MoveRuleDownAsync(rule), CanMoveRuleDown);
+        EditRuleCommand = new RelayCommand<Rule>(EditRule, _ => SelectedRule is not null);
+        DeleteRuleCommand = new RelayCommand<Rule>(async _ => await DeleteRuleAsync(SelectedRule), _ => SelectedRule is not null);
+        MoveRuleUpCommand = new RelayCommand<Rule>(async _ => await MoveRuleUpAsync(SelectedRule), _ => CanMoveRuleUp(SelectedRule));
+        MoveRuleDownCommand = new RelayCommand<Rule>(async _ => await MoveRuleDownAsync(SelectedRule), _ => CanMoveRuleDown(SelectedRule));
         ToggleLiveLogCommand = new RelayCommand(() => LiveLogEnabled = !LiveLogEnabled);
         ClearRuleLogCommand = new RelayCommand(() => RuleLog.Clear());
         ClearLiveLogCommand = new RelayCommand(() => LiveLog.Clear());
@@ -260,6 +277,8 @@ public class MainViewModel : ViewModelBase
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     Rules.Add(newRule);
+                    // Select the newly added rule
+                    SelectedRule = newRule;
                 });
                 
                 AddToRuleLog($"Added new rule: {newRule.Name}");
@@ -275,8 +294,9 @@ public class MainViewModel : ViewModelBase
     /// <summary>
     /// Edits an existing rule using the rule editor dialog
     /// </summary>
-    private async void EditRule(Rule? rule)
+    private async void EditRule(Rule? _)
     {
+        var rule = SelectedRule;
         if (rule is null) return;
 
         try
@@ -300,6 +320,8 @@ public class MainViewModel : ViewModelBase
                     if (index >= 0)
                     {
                         Rules[index] = editedRule;
+                        // Update selected rule to the new instance
+                        SelectedRule = editedRule;
                     }
                 });
                 
@@ -355,6 +377,11 @@ public class MainViewModel : ViewModelBase
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     Rules.Remove(rule);
+                    // Clear selection if this was the selected rule
+                    if (SelectedRule == rule)
+                    {
+                        SelectedRule = null;
+                    }
                 });
                 
                 AddToRuleLog($"Deleted rule: {rule.Name}");
