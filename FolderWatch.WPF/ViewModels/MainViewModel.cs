@@ -174,7 +174,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             var rules = await _ruleService.GetRulesAsync();
             
             // Ensure UI updates happen on the UI thread
-            await Application.Current.Dispatcher.InvokeAsync(() =>
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Clear();
                 foreach (var rule in rules)
@@ -310,7 +310,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             await _ruleService.SaveRuleAsync(newRule);
             
             // Add to UI collection immediately on UI thread
-            await Application.Current.Dispatcher.InvokeAsync(() =>
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Add(newRule);
                 SelectedRule = newRule; // Select the newly added rule
@@ -372,7 +372,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             await _ruleService.DeleteRuleAsync(rule);
             
             // Remove from UI collection on UI thread
-            await Application.Current.Dispatcher.InvokeAsync(() =>
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Remove(rule);
                 
@@ -520,7 +520,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void OnRuleActionLogged(string message)
     {
-        App.Current.Dispatcher.Invoke(() => AddToRuleLog(message));
+        System.Windows.Application.Current.Dispatcher.Invoke(() => AddToRuleLog(message));
     }
 
     /// <summary>
@@ -528,7 +528,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void OnMonitoringStatusChanged(bool isMonitoring)
     {
-        App.Current.Dispatcher.Invoke(() =>
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             IsMonitoring = isMonitoring;
             OnPropertyChanged(nameof(CanStartMonitoring));
@@ -541,7 +541,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void OnFileEventLogged(string message)
     {
-        App.Current.Dispatcher.Invoke(() =>
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             if (LiveLogEnabled)
             {
@@ -555,7 +555,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void AddToRuleLog(string message)
     {
-        Application.Current.Dispatcher.BeginInvoke(() =>
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             RuleLog.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
             
@@ -572,7 +572,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void AddToLiveLog(string message)
     {
-        Application.Current.Dispatcher.BeginInvoke(() =>
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             LiveLog.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
             
@@ -589,7 +589,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void ShowWindow()
     {
-        if (App.Current.MainWindow is MainWindow mainWindow)
+        if (System.Windows.Application.Current.MainWindow is MainWindow mainWindow)
         {
             mainWindow.ShowAndActivate();
         }
@@ -626,7 +626,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             _ = StopMonitoringAsync();
             
             // Let the application know we're intentionally shutting down
-            if (Application.Current is App app)
+            if (System.Windows.Application.Current is App app)
             {
                 app.IsShuttingDown = true;
             }
@@ -639,7 +639,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         finally
         {
             // Shut down the application
-            Application.Current.Shutdown();
+            System.Windows.Application.Current.Shutdown();
         }
     }
 

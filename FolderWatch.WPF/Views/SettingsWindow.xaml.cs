@@ -18,7 +18,7 @@ public partial class SettingsWindow : MetroWindow
         InitializeComponent();
         
         // Get required services from App's DI container
-        var app = (App)Application.Current;
+        var app = (App)System.Windows.Application.Current;
         var settingsService = app.Services.GetRequiredService<ISettingsService>();
         var themeService = app.Services.GetRequiredService<IThemeService>();
         

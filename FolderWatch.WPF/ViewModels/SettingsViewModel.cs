@@ -301,11 +301,11 @@ public class SettingsViewModel : ViewModelBase
         catch (Exception)
         {
             // Fallback message if folder dialog fails
-            MessageBox.Show(
+            System.Windows.MessageBox.Show(
                 "Please enter the folder path manually in the text field.",
                 "Folder Browser",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
         }
     }
 

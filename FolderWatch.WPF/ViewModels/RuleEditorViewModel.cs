@@ -373,11 +373,11 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
             System.Diagnostics.Debug.WriteLine($"Error opening folder browser: {ex.Message}");
             
             // Fallback to let user type path manually
-            MessageBox.Show(
+            System.Windows.MessageBox.Show(
                 $"Unable to open folder browser: {ex.Message}\n\nPlease enter the destination folder path manually in the text field.",
                 "Folder Browser Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
         }
     }
 
