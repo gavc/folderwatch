@@ -95,6 +95,7 @@
                     <!-- Rules DataGrid -->
                     <DataGrid Grid.Row="0" 
                               ItemsSource="{Binding Rules}"
+                              SelectedItem="{Binding SelectedRule}"
                               AutoGenerateColumns="False"
                               CanUserAddRows="False"
                               CanUserDeleteRows="False"
@@ -132,7 +133,6 @@
 
                         <Button Content="Edit Rule" 
                                 Command="{Binding EditRuleCommand}"
-                                CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                 Style="{StaticResource MahApps.Styles.Button}"
                                 Margin="0,0,10,0">
                             <Button.ContentTemplate>
@@ -147,7 +147,6 @@
 
                         <Button Content="Delete Rule" 
                                 Command="{Binding DeleteRuleCommand}"
-                                CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                 Background="{DynamicResource MahApps.Brushes.Accent}"
                                 Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
                                 Margin="0,0,20,0">
@@ -163,7 +162,6 @@
 
                         <Button Content="Move Up" 
                                 Command="{Binding MoveRuleUpCommand}"
-                                CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                 Style="{StaticResource MahApps.Styles.Button}"
                                 Margin="0,0,10,0">
                             <Button.ContentTemplate>
@@ -178,7 +176,6 @@
 
                         <Button Content="Move Down" 
                                 Command="{Binding MoveRuleDownCommand}"
-                                CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                 Style="{StaticResource MahApps.Styles.Button}">
                             <Button.ContentTemplate>
                                 <DataTemplate>
