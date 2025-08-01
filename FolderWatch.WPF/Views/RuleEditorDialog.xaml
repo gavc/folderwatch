@@ -141,12 +141,12 @@
                            Margin="0,0,10,5"/>
                 <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
                          Text="{Binding Pattern, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="File pattern to match (e.g., *.txt, photo_*.jpg, document*.pdf)"
+                         ToolTip="File pattern to match using wildcards. Examples: *.txt (all text files), photo_*.jpg (photos starting with 'photo_'), document*.pdf (PDFs starting with 'document')"
                          Margin="0,0,0,5"/>
 
                 <!-- Pattern Help -->
                 <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
-                           Text="Examples: *.txt (all text files), photo_*.jpg (photos), document*.pdf (documents)"
+                           Text="Examples: *.txt (all text files), photo_*.jpg (photos), document*.pdf (documents), *.* (all files)"
                            FontStyle="Italic"
                            FontSize="10"
                            Foreground="Gray"/>
@@ -189,8 +189,24 @@
                                 </Style>
                             </DataGridComboBoxColumn.EditingElementStyle>
                         </DataGridComboBoxColumn>
-                        <DataGridTextColumn Header="Destination" Binding="{Binding Destination}" Width="200"/>
-                        <DataGridTextColumn Header="New Name Pattern" Binding="{Binding NewName}" Width="150"/>
+                        <DataGridTextColumn Header="Destination" 
+                                           Binding="{Binding Destination}" 
+                                           Width="200">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="ToolTip" Value="Destination folder for Copy/Move actions"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="New Name Pattern" 
+                                           Binding="{Binding NewName}" 
+                                           Width="150">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="ToolTip" Value="Name pattern for Rename/DateTime/Numbering actions (e.g., {filename}_processed, backup_{filename})"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*" IsReadOnly="True"/>
                     </DataGrid.Columns>
                 </DataGrid>

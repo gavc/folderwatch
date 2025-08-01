@@ -314,7 +314,7 @@ public class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Deletes a rule with confirmation dialog
+    /// Deletes a rule with confirmation dialog and progress indication
     /// </summary>
     private async Task DeleteRuleAsync(Rule? rule)
     {
@@ -341,15 +341,32 @@ public class MainViewModel : ViewModelBase
                 return;
             }
 
-            await _ruleService.DeleteRuleAsync(rule);
-            
-            // Remove from UI collection on UI thread
-            await Application.Current.Dispatcher.InvokeAsync(() =>
+            // Show progress for long-running operation
+            var progressDialog = await DialogHelper.ShowProgressAsync(
+                mainWindow, 
+                "Deleting Rule", 
+                "Please wait while the rule is being deleted...");
+
+            try
             {
-                Rules.Remove(rule);
-            });
-            
-            AddToRuleLog($"Deleted rule: {rule.Name}");
+                await _ruleService.DeleteRuleAsync(rule);
+                
+                // Remove from UI collection on UI thread
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    Rules.Remove(rule);
+                });
+                
+                AddToRuleLog($"Deleted rule: {rule.Name}");
+            }
+            finally
+            {
+                // Close progress dialog
+                if (progressDialog is not null)
+                {
+                    await progressDialog.CloseAsync();
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -525,11 +542,42 @@ public class MainViewModel : ViewModelBase
     /// <summary>
     /// Shows the settings dialog
     /// </summary>
-    private void ShowSettings()
+    private async void ShowSettings()
     {
-        // This would open a settings dialog
-        // For now, just log the action
-        AddToRuleLog("Settings dialog not implemented yet");
+        try
+        {
+            var mainWindow = Application.Current.MainWindow;
+            if (mainWindow is null)
+            {
+                AddToRuleLog("Error: Could not find main window for settings dialog");
+                return;
+            }
+
+            // Create and show settings window
+            var settingsWindow = new SettingsWindow
+            {
+                Owner = mainWindow
+            };
+            
+            var result = settingsWindow.ShowDialog();
+            if (result == true)
+            {
+                AddToRuleLog("Settings updated successfully");
+                
+                // Reload settings that might affect monitoring
+                var settings = _settingsService.Settings;
+                if (!string.IsNullOrEmpty(settings.LastWatchedFolder) && 
+                    settings.LastWatchedFolder != SelectedFolderPath)
+                {
+                    SelectedFolderPath = settings.LastWatchedFolder;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AddToRuleLog($"Error opening settings: {ex.Message}");
+            await ShowErrorAsync("Settings Error", $"Failed to open settings: {ex.Message}");
+        }
     }
 
     /// <summary>

@@ -377,18 +377,30 @@ public class RuleEditorViewModel : ViewModelBase
         {
             errors.Add("Rule name is required");
         }
+        else if (Name.Length > 100)
+        {
+            errors.Add("Rule name must be 100 characters or less");
+        }
         
         if (string.IsNullOrWhiteSpace(Pattern))
         {
             errors.Add("File pattern is required");
+        }
+        else
+        {
+            var patternErrors = ValidationHelper.ValidateFilePattern(Pattern);
+            errors.AddRange(patternErrors);
         }
         
         // Validate steps
         for (int i = 0; i < Steps.Count; i++)
         {
             var step = Steps[i];
-            var stepErrors = ValidateStep(step, i + 1);
-            errors.AddRange(stepErrors);
+            var stepErrors = step.Validate();
+            foreach (var error in stepErrors)
+            {
+                errors.Add($"Step {i + 1}: {error}");
+            }
         }
         
         ValidationError = string.Join(Environment.NewLine, errors);
@@ -396,33 +408,12 @@ public class RuleEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Validates a single step
+    /// Validates a single step (kept for backward compatibility)
     /// </summary>
     private static List<string> ValidateStep(RuleStep step, int stepNumber)
     {
-        var errors = new List<string>();
-        
-        switch (step.Action)
-        {
-            case RuleAction.Copy:
-            case RuleAction.Move:
-                if (string.IsNullOrWhiteSpace(step.Destination))
-                {
-                    errors.Add($"Step {stepNumber}: Destination folder is required for {step.Action} action");
-                }
-                break;
-                
-            case RuleAction.Rename:
-            case RuleAction.DateTime:
-            case RuleAction.Numbering:
-                if (string.IsNullOrWhiteSpace(step.NewName))
-                {
-                    errors.Add($"Step {stepNumber}: New name pattern is required for {step.Action} action");
-                }
-                break;
-        }
-        
-        return errors;
+        var stepErrors = step.Validate();
+        return stepErrors.Select(error => $"Step {stepNumber}: {error}").ToList();
     }
 
     /// <summary>
