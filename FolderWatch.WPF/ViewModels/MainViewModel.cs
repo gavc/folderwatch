@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows.Input;
+using System.Windows.Threading;
 using FolderWatch.WPF.Helpers;
 using FolderWatch.WPF.Models;
 using FolderWatch.WPF.Services;
@@ -48,13 +49,27 @@ public class MainViewModel : ViewModelBase
     public string SelectedFolderPath
     {
         get => _selectedFolderPath;
-        set => SetProperty(ref _selectedFolderPath, value);
+        set
+        {
+            if (SetProperty(ref _selectedFolderPath, value))
+            {
+                OnPropertyChanged(nameof(CanStartMonitoring));
+                OnPropertyChanged(nameof(CanStopMonitoring));
+            }
+        }
     }
 
     public bool IsMonitoring
     {
         get => _isMonitoring;
-        set => SetProperty(ref _isMonitoring, value);
+        set
+        {
+            if (SetProperty(ref _isMonitoring, value))
+            {
+                OnPropertyChanged(nameof(CanStartMonitoring));
+                OnPropertyChanged(nameof(CanStopMonitoring));
+            }
+        }
     }
 
     public string StatusMessage
@@ -142,11 +157,16 @@ public class MainViewModel : ViewModelBase
         try
         {
             var rules = await _ruleService.GetRulesAsync();
-            Rules.Clear();
-            foreach (var rule in rules)
+            
+            // Ensure UI updates happen on the UI thread
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                Rules.Add(rule);
-            }
+                Rules.Clear();
+                foreach (var rule in rules)
+                {
+                    Rules.Add(rule);
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -218,7 +238,7 @@ public class MainViewModel : ViewModelBase
     /// <summary>
     /// Adds a new rule
     /// </summary>
-    private void AddRule()
+    private async void AddRule()
     {
         // This would open a rule editor dialog
         // For now, add a placeholder rule
@@ -230,11 +250,22 @@ public class MainViewModel : ViewModelBase
             Destination = @"C:\Processed"
         };
 
-        _ = Task.Run(async () =>
+        try
         {
             await _ruleService.SaveRuleAsync(newRule);
-            await LoadRulesAsync();
-        });
+            
+            // Add to UI collection immediately on UI thread
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                Rules.Add(newRule);
+            });
+            
+            AddToRuleLog($"Added new rule: {newRule.Name}");
+        }
+        catch (Exception ex)
+        {
+            AddToRuleLog($"Error adding rule: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -258,7 +289,13 @@ public class MainViewModel : ViewModelBase
         try
         {
             await _ruleService.DeleteRuleAsync(rule);
-            Rules.Remove(rule);
+            
+            // Remove from UI collection on UI thread
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                Rules.Remove(rule);
+            });
+            
             AddToRuleLog($"Deleted rule: {rule.Name}");
         }
         catch (Exception ex)
@@ -368,13 +405,16 @@ public class MainViewModel : ViewModelBase
     /// </summary>
     private void AddToRuleLog(string message)
     {
-        RuleLog.Add(message);
-        
-        // Keep log size manageable
-        while (RuleLog.Count > 1000)
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
-            RuleLog.RemoveAt(0);
-        }
+            RuleLog.Add(message);
+            
+            // Keep log size manageable
+            while (RuleLog.Count > 1000)
+            {
+                RuleLog.RemoveAt(0);
+            }
+        });
     }
 
     /// <summary>
