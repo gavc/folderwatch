@@ -52,14 +52,11 @@ _ReSharper*/
 *.vspscc
 *.vssscc
 
-# WPF designer files
-*.cache
+# WPF auto-generated designer files (but keep hand-written code-behind files)
 *.g.cs
 *.g.i.cs
 *.designer.cs
 *.designer.vb
-*.xaml.cs
-*.xaml.vb
 
 # Local history
 .localhistory/

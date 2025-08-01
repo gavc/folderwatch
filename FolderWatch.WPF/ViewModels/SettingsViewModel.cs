@@ -1,8 +1,11 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Windows;
 using System.Windows.Input;
 using FolderWatch.WPF.Helpers;
 using FolderWatch.WPF.Models;
 using FolderWatch.WPF.Services;
+using Microsoft.Win32;
 
 namespace FolderWatch.WPF.ViewModels;
 
@@ -278,16 +281,31 @@ public class SettingsViewModel : ViewModelBase
 
     private void BrowseFolder()
     {
-        var dialog = new System.Windows.Forms.FolderBrowserDialog
+        try
         {
-            Description = "Select folder to monitor",
-            SelectedPath = WatchFolder,
-            ShowNewFolderButton = true
-        };
+            var dialog = new OpenFolderDialog
+            {
+                Title = "Select folder to monitor"
+            };
 
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            if (!string.IsNullOrWhiteSpace(WatchFolder) && Directory.Exists(WatchFolder))
+            {
+                dialog.InitialDirectory = WatchFolder;
+            }
+
+            if (dialog.ShowDialog() == true)
+            {
+                WatchFolder = dialog.FolderName;
+            }
+        }
+        catch (Exception)
         {
-            WatchFolder = dialog.SelectedPath;
+            // Fallback message if folder dialog fails
+            MessageBox.Show(
+                "Please enter the folder path manually in the text field.",
+                "Folder Browser",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
     }
 
