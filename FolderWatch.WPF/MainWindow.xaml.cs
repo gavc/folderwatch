@@ -42,7 +42,7 @@ public partial class MainWindow : MetroWindow
         bool isRealShutdown = false;
         
         // Try to get the shutdown mode or use the exit command directly triggered
-        if (Application.Current is App app)
+        if (System.Windows.Application.Current is App app)
         {
             isRealShutdown = app.IsShuttingDown;
         }

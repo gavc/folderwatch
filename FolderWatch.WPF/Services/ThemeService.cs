@@ -58,7 +58,7 @@ public class ThemeService : IThemeService
         try
         {
             // Apply the theme change to the current application using ControlzEx
-            ThemeManager.Current.ChangeTheme(Application.Current, $"{themeName}.{accentName}");
+            ThemeManager.Current.ChangeTheme(System.Windows.Application.Current, $"{themeName}.{accentName}");
             
             CurrentTheme = themeName;
             CurrentAccent = accentName;

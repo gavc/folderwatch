@@ -25,7 +25,7 @@ public partial class App : Application
     /// <summary>
     /// Gets the current application instance cast to App
     /// </summary>
-    public static new App Current => (App)Application.Current;
+    public static new App Current => (App)System.Windows.Application.Current;
 
     /// <summary>
     /// Gets the service provider for dependency injection
