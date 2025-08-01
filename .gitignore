@@ -1,0 +1,74 @@
+# .gitignore for WPF C# Windows Application
+# Build results
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+
+# NuGet packages
+*.nupkg
+# NuGet restore files
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Windows image file caches
+Thumbs.db
+*.DS_Store
+
+# Rider
+.idea/
+*.sln.iml
+
+# DotCover
+*.dotCover
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Publish output
+publish/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Auto-generated files
+Generated_Code/
+
+# Others
+_ReSharper*/
+*.resharper
+*.vspscc
+*.vssscc
+
+# WPF designer files
+*.cache
+*.g.cs
+*.g.i.cs
+*.designer.cs
+*.designer.vb
+*.xaml.cs
+*.xaml.vb
+
+# Local history
+.localhistory/
+
+# Backup & crash reports
+*.bak
+*.orig
+*.log
+*.dmp
+
+# Application settings
+appsettings.*.json
