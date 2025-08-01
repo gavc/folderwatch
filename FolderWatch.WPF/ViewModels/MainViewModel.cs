@@ -115,13 +115,13 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         // Initialize commands
         BrowseFolderCommand = new RelayCommand(BrowseFolder);
-        StartMonitoringCommand = new RelayCommand(async () => await StartMonitoringAsync(), () => CanStartMonitoring);
-        StopMonitoringCommand = new RelayCommand(async () => await StopMonitoringAsync(), () => CanStopMonitoring);
-        AddRuleCommand = new RelayCommand(AddRule);
+        StartMonitoringCommand = new AsyncRelayCommand(StartMonitoringAsync, () => CanStartMonitoring);
+        StopMonitoringCommand = new AsyncRelayCommand(StopMonitoringAsync, () => CanStopMonitoring);
+        AddRuleCommand = new AsyncRelayCommand(AddRuleAsync);
         EditRuleCommand = new RelayCommand(() => EditRule(SelectedRule), () => SelectedRule is not null);
-        DeleteRuleCommand = new RelayCommand(async () => await DeleteRuleAsync(SelectedRule), () => SelectedRule is not null);
-        MoveRuleUpCommand = new RelayCommand(async () => await MoveRuleUpAsync(SelectedRule), () => CanMoveRuleUp(SelectedRule));
-        MoveRuleDownCommand = new RelayCommand(async () => await MoveRuleDownAsync(SelectedRule), () => CanMoveRuleDown(SelectedRule));
+        DeleteRuleCommand = new AsyncRelayCommand(async () => await DeleteRuleAsync(SelectedRule), () => SelectedRule is not null);
+        MoveRuleUpCommand = new AsyncRelayCommand(async () => await MoveRuleUpAsync(SelectedRule), () => CanMoveRuleUp(SelectedRule));
+        MoveRuleDownCommand = new AsyncRelayCommand(async () => await MoveRuleDownAsync(SelectedRule), () => CanMoveRuleDown(SelectedRule));
         ToggleLiveLogCommand = new RelayCommand(() => LiveLogEnabled = !LiveLogEnabled);
         ClearRuleLogCommand = new RelayCommand(() => RuleLog.Clear());
         ClearLiveLogCommand = new RelayCommand(() => LiveLog.Clear());
@@ -242,14 +242,29 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private async Task StartMonitoringAsync()
     {
+        if (string.IsNullOrWhiteSpace(SelectedFolderPath))
+        {
+            StatusMessage = "Please select a folder to monitor";
+            return;
+        }
+
+        if (!Directory.Exists(SelectedFolderPath))
+        {
+            StatusMessage = "Selected folder does not exist";
+            return;
+        }
+
         try
         {
+            StatusMessage = "Starting monitoring...";
             await _fileMonitorService.StartMonitoringAsync(SelectedFolderPath);
             StatusMessage = $"Monitoring: {SelectedFolderPath}";
+            AddToRuleLog($"Started monitoring folder: {SelectedFolderPath}");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error starting monitoring: {ex.Message}";
+            var errorMessage = $"Error starting monitoring: {ex.Message}";
+            StatusMessage = errorMessage;
             AddToRuleLog($"Failed to start monitoring: {ex.Message}");
         }
     }
@@ -261,12 +276,15 @@ public class MainViewModel : ViewModelBase, IDisposable
     {
         try
         {
+            StatusMessage = "Stopping monitoring...";
             await _fileMonitorService.StopMonitoringAsync();
             StatusMessage = "Ready";
+            AddToRuleLog("Stopped monitoring");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error stopping monitoring: {ex.Message}";
+            var errorMessage = $"Error stopping monitoring: {ex.Message}";
+            StatusMessage = errorMessage;
             AddToRuleLog($"Failed to stop monitoring: {ex.Message}");
         }
     }
@@ -274,7 +292,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Adds a new rule
     /// </summary>
-    private async void AddRule()
+    private async Task AddRuleAsync()
     {
         try
         {
@@ -582,9 +600,19 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void ShowSettings()
     {
-        // This would open a settings dialog
-        // For now, just log the action
-        AddToRuleLog("Settings dialog not implemented yet");
+        try
+        {
+            // This would open a settings dialog
+            // For now, just provide feedback
+            AddToRuleLog("Settings dialog not implemented yet");
+            StatusMessage = "Settings dialog feature coming soon";
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = $"Error opening settings: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
+        }
     }
 
     /// <summary>
