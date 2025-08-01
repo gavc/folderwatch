@@ -10,9 +10,12 @@ namespace FolderWatch.WPF;
 /// </summary>
 public partial class MainWindow : MetroWindow
 {
-    public MainWindow()
+    public MainWindow(MainViewModel viewModel)
     {
         InitializeComponent();
+        
+        // Set the DataContext to the injected MainViewModel
+        DataContext = viewModel;
     }
 
     /// <summary>

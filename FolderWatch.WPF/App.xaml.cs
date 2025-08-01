@@ -78,7 +78,7 @@ public partial class App : Application
         services.AddSingleton<ISettingsService, SettingsService>();
 
         // Register ViewModels
-        services.AddTransient<MainViewModel>();
+        services.AddSingleton<MainViewModel>();
         services.AddTransient<SettingsViewModel>();
 
         // Register the main window

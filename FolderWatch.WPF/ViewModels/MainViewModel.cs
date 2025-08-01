@@ -6,7 +6,6 @@ using System.Windows.Threading;
 using FolderWatch.WPF.Helpers;
 using FolderWatch.WPF.Models;
 using FolderWatch.WPF.Services;
-using Microsoft.Win32;
 
 namespace FolderWatch.WPF.ViewModels;
 
@@ -25,6 +24,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private bool _isMonitoring = false;
     private string _statusMessage = "Ready";
     private bool _liveLogEnabled = true;
+    private Rule? _selectedRule;
 
     // Observable collections for UI binding
     public ObservableCollection<Rule> Rules { get; } = new();
@@ -86,6 +86,19 @@ public class MainViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _liveLogEnabled, value);
     }
 
+    public Rule? SelectedRule
+    {
+        get => _selectedRule;
+        set
+        {
+            if (SetProperty(ref _selectedRule, value))
+            {
+                // Trigger CanExecute updates for rule-dependent commands
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
+
     public bool CanStartMonitoring => !IsMonitoring && !string.IsNullOrWhiteSpace(SelectedFolderPath) && Directory.Exists(SelectedFolderPath);
     public bool CanStopMonitoring => IsMonitoring;
 
@@ -102,13 +115,13 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         // Initialize commands
         BrowseFolderCommand = new RelayCommand(BrowseFolder);
-        StartMonitoringCommand = new RelayCommand(async () => await StartMonitoringAsync(), () => CanStartMonitoring);
-        StopMonitoringCommand = new RelayCommand(async () => await StopMonitoringAsync(), () => CanStopMonitoring);
-        AddRuleCommand = new RelayCommand(AddRule);
-        EditRuleCommand = new RelayCommand<Rule>(EditRule, rule => rule is not null);
-        DeleteRuleCommand = new RelayCommand<Rule>(async rule => await DeleteRuleAsync(rule), rule => rule is not null);
-        MoveRuleUpCommand = new RelayCommand<Rule>(async rule => await MoveRuleUpAsync(rule), CanMoveRuleUp);
-        MoveRuleDownCommand = new RelayCommand<Rule>(async rule => await MoveRuleDownAsync(rule), CanMoveRuleDown);
+        StartMonitoringCommand = new AsyncRelayCommand(StartMonitoringAsync, () => CanStartMonitoring);
+        StopMonitoringCommand = new AsyncRelayCommand(StopMonitoringAsync, () => CanStopMonitoring);
+        AddRuleCommand = new AsyncRelayCommand(AddRuleAsync);
+        EditRuleCommand = new RelayCommand(() => EditRule(SelectedRule), () => SelectedRule is not null);
+        DeleteRuleCommand = new AsyncRelayCommand(async () => await DeleteRuleAsync(SelectedRule), () => SelectedRule is not null);
+        MoveRuleUpCommand = new AsyncRelayCommand(async () => await MoveRuleUpAsync(SelectedRule), () => CanMoveRuleUp(SelectedRule));
+        MoveRuleDownCommand = new AsyncRelayCommand(async () => await MoveRuleDownAsync(SelectedRule), () => CanMoveRuleDown(SelectedRule));
         ToggleLiveLogCommand = new RelayCommand(() => LiveLogEnabled = !LiveLogEnabled);
         ClearRuleLogCommand = new RelayCommand(() => RuleLog.Clear());
         ClearLiveLogCommand = new RelayCommand(() => LiveLog.Clear());
@@ -161,7 +174,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             var rules = await _ruleService.GetRulesAsync();
             
             // Ensure UI updates happen on the UI thread
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Clear();
                 foreach (var rule in rules)
@@ -181,25 +194,46 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void BrowseFolder()
     {
-        var dialog = new OpenFolderDialog
+        try
         {
-            Title = "Select Folder to Monitor"
-        };
-
-        if (!string.IsNullOrWhiteSpace(SelectedFolderPath))
-        {
-            dialog.InitialDirectory = SelectedFolderPath;
-        }
-
-        if (dialog.ShowDialog() == true)
-        {
-            SelectedFolderPath = dialog.FolderName;
-            
-            // Save to settings
-            _ = Task.Run(async () =>
+            // Use Windows Forms folder browser dialog for better compatibility
+            using var dialog = new System.Windows.Forms.FolderBrowserDialog
             {
-                await _settingsService.UpdateSettingAsync(nameof(AppSettings.LastWatchedFolder), SelectedFolderPath);
-            });
+                Description = "Select Folder to Monitor",
+                ShowNewFolderButton = true,
+                UseDescriptionForTitle = true
+            };
+
+            if (!string.IsNullOrWhiteSpace(SelectedFolderPath) && Directory.Exists(SelectedFolderPath))
+            {
+                dialog.SelectedPath = SelectedFolderPath;
+            }
+
+            var result = dialog.ShowDialog();
+            if (result == System.Windows.Forms.DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
+            {
+                SelectedFolderPath = dialog.SelectedPath;
+                
+                // Save to settings
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _settingsService.UpdateSettingAsync(nameof(AppSettings.LastWatchedFolder), SelectedFolderPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        AddToRuleLog($"Error saving folder path to settings: {ex.Message}");
+                    }
+                });
+                
+                AddToRuleLog($"Selected folder: {SelectedFolderPath}");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error browsing folders: {ex.Message}";
+            AddToRuleLog($"Failed to browse folders: {ex.Message}");
         }
     }
 
@@ -208,14 +242,29 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private async Task StartMonitoringAsync()
     {
+        if (string.IsNullOrWhiteSpace(SelectedFolderPath))
+        {
+            StatusMessage = "Please select a folder to monitor";
+            return;
+        }
+
+        if (!Directory.Exists(SelectedFolderPath))
+        {
+            StatusMessage = "Selected folder does not exist";
+            return;
+        }
+
         try
         {
+            StatusMessage = "Starting monitoring...";
             await _fileMonitorService.StartMonitoringAsync(SelectedFolderPath);
             StatusMessage = $"Monitoring: {SelectedFolderPath}";
+            AddToRuleLog($"Started monitoring folder: {SelectedFolderPath}");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error starting monitoring: {ex.Message}";
+            var errorMessage = $"Error starting monitoring: {ex.Message}";
+            StatusMessage = errorMessage;
             AddToRuleLog($"Failed to start monitoring: {ex.Message}");
         }
     }
@@ -227,12 +276,15 @@ public class MainViewModel : ViewModelBase, IDisposable
     {
         try
         {
+            StatusMessage = "Stopping monitoring...";
             await _fileMonitorService.StopMonitoringAsync();
             StatusMessage = "Ready";
+            AddToRuleLog("Stopped monitoring");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error stopping monitoring: {ex.Message}";
+            var errorMessage = $"Error stopping monitoring: {ex.Message}";
+            StatusMessage = errorMessage;
             AddToRuleLog($"Failed to stop monitoring: {ex.Message}");
         }
     }
@@ -240,33 +292,38 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Adds a new rule
     /// </summary>
-    private async void AddRule()
+    private async Task AddRuleAsync()
     {
-        // This would open a rule editor dialog
-        // For now, add a placeholder rule
-        var newRule = new Rule
-        {
-            Name = $"New Rule {Rules.Count + 1}",
-            Pattern = "*.txt",
-            Action = RuleAction.Move,
-            Destination = @"C:\Processed"
-        };
-
         try
         {
+            // This would open a rule editor dialog
+            // For now, add a placeholder rule with better defaults
+            var newRule = new Rule
+            {
+                Name = $"New Rule {Rules.Count + 1}",
+                Pattern = "*.txt",
+                Action = RuleAction.Move,
+                Destination = Path.Combine(SelectedFolderPath ?? Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Processed"),
+                Enabled = true
+            };
+
             await _ruleService.SaveRuleAsync(newRule);
             
             // Add to UI collection immediately on UI thread
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Add(newRule);
+                SelectedRule = newRule; // Select the newly added rule
             });
             
             AddToRuleLog($"Added new rule: {newRule.Name}");
+            StatusMessage = $"Added rule: {newRule.Name}";
         }
         catch (Exception ex)
         {
-            AddToRuleLog($"Error adding rule: {ex.Message}");
+            var errorMessage = $"Error adding rule: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
         }
     }
 
@@ -275,10 +332,25 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void EditRule(Rule? rule)
     {
-        if (rule is null) return;
+        if (rule is null) 
+        {
+            StatusMessage = "No rule selected for editing";
+            return;
+        }
         
-        // This would open a rule editor dialog with the selected rule
-        AddToRuleLog($"Edit rule: {rule.Name} (not implemented yet)");
+        try
+        {
+            // This would open a rule editor dialog with the selected rule
+            // For now, just provide feedback
+            AddToRuleLog($"Edit rule: {rule.Name} (Rule editor dialog not implemented yet)");
+            StatusMessage = $"Editing rule: {rule.Name} (Feature coming soon)";
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = $"Error editing rule {rule.Name}: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
+        }
     }
 
     /// <summary>
@@ -286,23 +358,55 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private async Task DeleteRuleAsync(Rule? rule)
     {
-        if (rule is null) return;
+        if (rule is null) 
+        {
+            StatusMessage = "No rule selected for deletion";
+            return;
+        }
 
         try
         {
+            // Find the current index for better selection management
+            var currentIndex = Rules.IndexOf(rule);
+            
             await _ruleService.DeleteRuleAsync(rule);
             
             // Remove from UI collection on UI thread
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Remove(rule);
+                
+                // Select the next rule or previous if we deleted the last one
+                if (Rules.Count > 0)
+                {
+                    if (currentIndex < Rules.Count)
+                    {
+                        SelectedRule = Rules[currentIndex];
+                    }
+                    else if (currentIndex > 0)
+                    {
+                        SelectedRule = Rules[currentIndex - 1];
+                    }
+                    else
+                    {
+                        SelectedRule = Rules[0];
+                    }
+                }
+                else
+                {
+                    SelectedRule = null;
+                }
             });
             
-            AddToRuleLog($"Deleted rule: {rule.Name}");
+            var successMessage = $"Deleted rule: {rule.Name}";
+            AddToRuleLog(successMessage);
+            StatusMessage = successMessage;
         }
         catch (Exception ex)
         {
-            AddToRuleLog($"Error deleting rule: {ex.Message}");
+            var errorMessage = $"Error deleting rule {rule.Name}: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
         }
     }
 
@@ -311,13 +415,34 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private async Task MoveRuleUpAsync(Rule? rule)
     {
-        if (rule is null) return;
-
-        var index = Rules.IndexOf(rule);
-        if (index > 0)
+        if (rule is null) 
         {
-            Rules.Move(index, index - 1);
-            await SaveRuleOrderAsync();
+            StatusMessage = "No rule selected to move up";
+            return;
+        }
+
+        try
+        {
+            var index = Rules.IndexOf(rule);
+            if (index > 0)
+            {
+                Rules.Move(index, index - 1);
+                await SaveRuleOrderAsync();
+                
+                var successMessage = $"Moved rule '{rule.Name}' up";
+                AddToRuleLog(successMessage);
+                StatusMessage = successMessage;
+            }
+            else
+            {
+                StatusMessage = "Rule is already at the top";
+            }
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = $"Error moving rule '{rule.Name}' up: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
         }
     }
 
@@ -326,13 +451,34 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private async Task MoveRuleDownAsync(Rule? rule)
     {
-        if (rule is null) return;
-
-        var index = Rules.IndexOf(rule);
-        if (index < Rules.Count - 1)
+        if (rule is null) 
         {
-            Rules.Move(index, index + 1);
-            await SaveRuleOrderAsync();
+            StatusMessage = "No rule selected to move down";
+            return;
+        }
+
+        try
+        {
+            var index = Rules.IndexOf(rule);
+            if (index < Rules.Count - 1)
+            {
+                Rules.Move(index, index + 1);
+                await SaveRuleOrderAsync();
+                
+                var successMessage = $"Moved rule '{rule.Name}' down";
+                AddToRuleLog(successMessage);
+                StatusMessage = successMessage;
+            }
+            else
+            {
+                StatusMessage = "Rule is already at the bottom";
+            }
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = $"Error moving rule '{rule.Name}' down: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
         }
     }
 
@@ -363,7 +509,9 @@ public class MainViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            AddToRuleLog($"Error saving rule order: {ex.Message}");
+            var errorMessage = $"Error saving rule order: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
         }
     }
 
@@ -407,9 +555,9 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void AddToRuleLog(string message)
     {
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+        Application.Current.Dispatcher.BeginInvoke(() =>
         {
-            RuleLog.Add(message);
+            RuleLog.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
             
             // Keep log size manageable
             while (RuleLog.Count > 1000)
@@ -424,13 +572,16 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void AddToLiveLog(string message)
     {
-        LiveLog.Add(message);
-        
-        // Keep log size manageable
-        while (LiveLog.Count > 1000)
+        Application.Current.Dispatcher.BeginInvoke(() =>
         {
-            LiveLog.RemoveAt(0);
-        }
+            LiveLog.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
+            
+            // Keep log size manageable
+            while (LiveLog.Count > 1000)
+            {
+                LiveLog.RemoveAt(0);
+            }
+        });
     }
 
     /// <summary>
@@ -449,9 +600,19 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void ShowSettings()
     {
-        // This would open a settings dialog
-        // For now, just log the action
-        AddToRuleLog("Settings dialog not implemented yet");
+        try
+        {
+            // This would open a settings dialog
+            // For now, just provide feedback
+            AddToRuleLog("Settings dialog not implemented yet");
+            StatusMessage = "Settings dialog feature coming soon";
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = $"Error opening settings: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
+        }
     }
 
     /// <summary>
