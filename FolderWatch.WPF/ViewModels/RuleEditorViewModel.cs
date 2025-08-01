@@ -162,6 +162,12 @@ public class RuleEditorViewModel : ViewModelBase
     {
         OriginalRule = rule;
         
+        // Unsubscribe from any existing step property changes
+        foreach (var step in Steps)
+        {
+            step.PropertyChanged -= OnStepPropertyChanged;
+        }
+        
         if (rule is not null)
         {
             Name = rule.Name;
@@ -172,13 +178,17 @@ public class RuleEditorViewModel : ViewModelBase
             Steps.Clear();
             foreach (var step in rule.Steps)
             {
-                Steps.Add(new RuleStep
+                var newStep = new RuleStep
                 {
                     Action = step.Action,
                     Destination = step.Destination,
                     NewName = step.NewName,
                     Enabled = step.Enabled
-                });
+                };
+                
+                // Subscribe to property changes for validation
+                newStep.PropertyChanged += OnStepPropertyChanged;
+                Steps.Add(newStep);
             }
         }
         else
@@ -233,8 +243,14 @@ public class RuleEditorViewModel : ViewModelBase
             Enabled = true
         };
         
+        // Subscribe to property changes for validation
+        newStep.PropertyChanged += OnStepPropertyChanged;
+        
         Steps.Add(newStep);
         SelectedStep = newStep;
+        
+        // Re-validate after adding a step
+        ValidateAll();
     }
 
     /// <summary>
@@ -255,6 +271,9 @@ public class RuleEditorViewModel : ViewModelBase
     {
         if (step is null) return;
         
+        // Unsubscribe from property changes
+        step.PropertyChanged -= OnStepPropertyChanged;
+        
         var index = Steps.IndexOf(step);
         Steps.Remove(step);
         
@@ -274,6 +293,9 @@ public class RuleEditorViewModel : ViewModelBase
         {
             SelectedStep = null;
         }
+        
+        // Re-validate after deleting a step
+        ValidateAll();
     }
 
     /// <summary>
@@ -342,17 +364,20 @@ public class RuleEditorViewModel : ViewModelBase
             if (dialog.ShowDialog() == true)
             {
                 step.Destination = dialog.FolderName;
+                ValidateAll(); // Re-validate after changing destination
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Fallback to FolderBrowserDialog or let user type path manually
-            // This handles cases where OpenFolderDialog is not available
+            // Log the exception and show user-friendly message
+            System.Diagnostics.Debug.WriteLine($"Error opening folder browser: {ex.Message}");
+            
+            // Fallback to let user type path manually
             MessageBox.Show(
-                "Please enter the destination folder path manually in the text field.",
-                "Folder Browser",
+                $"Unable to open folder browser: {ex.Message}\n\nPlease enter the destination folder path manually in the text field.",
+                "Folder Browser Error",
                 MessageBoxButton.OK,
-                MessageBoxImage.Information);
+                MessageBoxImage.Warning);
         }
     }
 
@@ -434,6 +459,15 @@ public class RuleEditorViewModel : ViewModelBase
     private void ValidateProperty(object value, [System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
     {
         // This is a simplified validation - in a real app you might use a validation framework
+        ValidateAll();
+    }
+
+    /// <summary>
+    /// Handles property changes from rule steps to trigger validation
+    /// </summary>
+    private void OnStepPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        // Re-validate when any step property changes
         ValidateAll();
     }
 }

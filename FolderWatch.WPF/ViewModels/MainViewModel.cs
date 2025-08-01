@@ -178,9 +178,11 @@ public class MainViewModel : ViewModelBase
             var rules = await _ruleService.GetRulesAsync();
             
             // Ensure UI updates happen on the UI thread
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Clear();
+                SelectedRule = null; // Clear selection when reloading
+                
                 foreach (var rule in rules)
                 {
                     Rules.Add(rule);
@@ -190,6 +192,7 @@ public class MainViewModel : ViewModelBase
         catch (Exception ex)
         {
             AddToRuleLog($"Error loading rules: {ex.Message}");
+            StatusMessage = $"Failed to load rules: {ex.Message}";
         }
     }
 
