@@ -282,8 +282,18 @@
                    Text="{Binding ValidationError}"
                    Foreground="Red"
                    Margin="10,0,10,10"
-                   TextWrapping="Wrap"
-                   Visibility="{Binding ValidationError, Converter={x:Static mah:Converters.StringToVisibilityConverter.Instance}}"/>
+                   TextWrapping="Wrap">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasValidationError}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
 
         <!-- Dialog Buttons -->
         <StackPanel Grid.Row="3" 
