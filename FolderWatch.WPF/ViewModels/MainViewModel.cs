@@ -6,7 +6,6 @@ using System.Windows.Threading;
 using FolderWatch.WPF.Helpers;
 using FolderWatch.WPF.Models;
 using FolderWatch.WPF.Services;
-using FolderWatch.WPF.Views;
 using Microsoft.Win32;
 
 namespace FolderWatch.WPF.ViewModels;
@@ -14,18 +13,18 @@ namespace FolderWatch.WPF.ViewModels;
 /// <summary>
 /// Main view model for the application
 /// </summary>
-public class MainViewModel : ViewModelBase
+public class MainViewModel : ViewModelBase, IDisposable
 {
     private readonly IRuleService _ruleService;
     private readonly IFileMonitorService _fileMonitorService;
     private readonly ISettingsService _settingsService;
     private readonly IThemeService _themeService;
+    private bool _disposed = false;
 
     private string _selectedFolderPath = string.Empty;
     private bool _isMonitoring = false;
     private string _statusMessage = "Ready";
     private bool _liveLogEnabled = true;
-    private Rule? _selectedRule;
 
     // Observable collections for UI binding
     public ObservableCollection<Rule> Rules { get; } = new();
@@ -87,22 +86,6 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _liveLogEnabled, value);
     }
 
-    public Rule? SelectedRule
-    {
-        get => _selectedRule;
-        set
-        {
-            if (SetProperty(ref _selectedRule, value))
-            {
-                // Notify command can-execute changed
-                ((RelayCommand<Rule>)EditRuleCommand).RaiseCanExecuteChanged();
-                ((RelayCommand<Rule>)DeleteRuleCommand).RaiseCanExecuteChanged();
-                ((RelayCommand<Rule>)MoveRuleUpCommand).RaiseCanExecuteChanged();
-                ((RelayCommand<Rule>)MoveRuleDownCommand).RaiseCanExecuteChanged();
-            }
-        }
-    }
-
     public bool CanStartMonitoring => !IsMonitoring && !string.IsNullOrWhiteSpace(SelectedFolderPath) && Directory.Exists(SelectedFolderPath);
     public bool CanStopMonitoring => IsMonitoring;
 
@@ -122,10 +105,10 @@ public class MainViewModel : ViewModelBase
         StartMonitoringCommand = new RelayCommand(async () => await StartMonitoringAsync(), () => CanStartMonitoring);
         StopMonitoringCommand = new RelayCommand(async () => await StopMonitoringAsync(), () => CanStopMonitoring);
         AddRuleCommand = new RelayCommand(AddRule);
-        EditRuleCommand = new RelayCommand<Rule>(EditRule, _ => SelectedRule is not null);
-        DeleteRuleCommand = new RelayCommand<Rule>(async _ => await DeleteRuleAsync(SelectedRule), _ => SelectedRule is not null);
-        MoveRuleUpCommand = new RelayCommand<Rule>(async _ => await MoveRuleUpAsync(SelectedRule), _ => CanMoveRuleUp(SelectedRule));
-        MoveRuleDownCommand = new RelayCommand<Rule>(async _ => await MoveRuleDownAsync(SelectedRule), _ => CanMoveRuleDown(SelectedRule));
+        EditRuleCommand = new RelayCommand<Rule>(EditRule, rule => rule is not null);
+        DeleteRuleCommand = new RelayCommand<Rule>(async rule => await DeleteRuleAsync(rule), rule => rule is not null);
+        MoveRuleUpCommand = new RelayCommand<Rule>(async rule => await MoveRuleUpAsync(rule), CanMoveRuleUp);
+        MoveRuleDownCommand = new RelayCommand<Rule>(async rule => await MoveRuleDownAsync(rule), CanMoveRuleDown);
         ToggleLiveLogCommand = new RelayCommand(() => LiveLogEnabled = !LiveLogEnabled);
         ClearRuleLogCommand = new RelayCommand(() => RuleLog.Clear());
         ClearLiveLogCommand = new RelayCommand(() => LiveLog.Clear());
@@ -178,11 +161,9 @@ public class MainViewModel : ViewModelBase
             var rules = await _ruleService.GetRulesAsync();
             
             // Ensure UI updates happen on the UI thread
-            await Application.Current.Dispatcher.InvokeAsync(() =>
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Clear();
-                SelectedRule = null; // Clear selection when reloading
-                
                 foreach (var rule in rules)
                 {
                     Rules.Add(rule);
@@ -192,7 +173,6 @@ public class MainViewModel : ViewModelBase
         catch (Exception ex)
         {
             AddToRuleLog($"Error loading rules: {ex.Message}");
-            StatusMessage = $"Failed to load rules: {ex.Message}";
         }
     }
 
@@ -258,88 +238,51 @@ public class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Adds a new rule using the rule editor dialog
+    /// Adds a new rule
     /// </summary>
     private async void AddRule()
     {
+        // This would open a rule editor dialog
+        // For now, add a placeholder rule
+        var newRule = new Rule
+        {
+            Name = $"New Rule {Rules.Count + 1}",
+            Pattern = "*.txt",
+            Action = RuleAction.Move,
+            Destination = @"C:\Processed"
+        };
+
         try
         {
-            var mainWindow = Application.Current.MainWindow;
-            if (mainWindow is null)
+            await _ruleService.SaveRuleAsync(newRule);
+            
+            // Add to UI collection immediately on UI thread
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                AddToRuleLog("Error: Could not find main window for dialog");
-                return;
-            }
-
-            var newRule = RuleEditorDialog.ShowDialog(mainWindow);
-            if (newRule is not null)
-            {
-                await _ruleService.SaveRuleAsync(newRule);
-                
-                // Add to UI collection immediately on UI thread
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    Rules.Add(newRule);
-                    // Select the newly added rule
-                    SelectedRule = newRule;
-                });
-                
-                AddToRuleLog($"Added new rule: {newRule.Name}");
-            }
+                Rules.Add(newRule);
+            });
+            
+            AddToRuleLog($"Added new rule: {newRule.Name}");
         }
         catch (Exception ex)
         {
             AddToRuleLog($"Error adding rule: {ex.Message}");
-            await ShowErrorAsync("Add Rule Error", $"Failed to add rule: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Edits an existing rule using the rule editor dialog
+    /// Edits an existing rule
     /// </summary>
-    private async void EditRule(Rule? _)
+    private void EditRule(Rule? rule)
     {
-        var rule = SelectedRule;
         if (rule is null) return;
-
-        try
-        {
-            var mainWindow = Application.Current.MainWindow;
-            if (mainWindow is null)
-            {
-                AddToRuleLog("Error: Could not find main window for dialog");
-                return;
-            }
-
-            var editedRule = RuleEditorDialog.ShowDialog(mainWindow, rule);
-            if (editedRule is not null)
-            {
-                await _ruleService.SaveRuleAsync(editedRule);
-                
-                // Update UI collection on UI thread
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    var index = Rules.IndexOf(rule);
-                    if (index >= 0)
-                    {
-                        Rules[index] = editedRule;
-                        // Update selected rule to the new instance
-                        SelectedRule = editedRule;
-                    }
-                });
-                
-                AddToRuleLog($"Updated rule: {editedRule.Name}");
-            }
-        }
-        catch (Exception ex)
-        {
-            AddToRuleLog($"Error editing rule: {ex.Message}");
-            await ShowErrorAsync("Edit Rule Error", $"Failed to edit rule: {ex.Message}");
-        }
+        
+        // This would open a rule editor dialog with the selected rule
+        AddToRuleLog($"Edit rule: {rule.Name} (not implemented yet)");
     }
 
     /// <summary>
-    /// Deletes a rule with confirmation dialog and progress indication
+    /// Deletes a rule
     /// </summary>
     private async Task DeleteRuleAsync(Rule? rule)
     {
@@ -347,117 +290,49 @@ public class MainViewModel : ViewModelBase
 
         try
         {
-            var mainWindow = Application.Current.MainWindow;
-            if (mainWindow is null)
+            await _ruleService.DeleteRuleAsync(rule);
+            
+            // Remove from UI collection on UI thread
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                AddToRuleLog("Error: Could not find main window for dialog");
-                return;
-            }
-
-            // Show confirmation dialog
-            var confirmed = await DialogHelper.ShowConfirmationAsync(
-                mainWindow,
-                "Delete Rule",
-                $"Are you sure you want to delete the rule '{rule.Name}'?\n\nThis action cannot be undone.");
-
-            if (!confirmed)
-            {
-                AddToRuleLog($"Delete rule cancelled: {rule.Name}");
-                return;
-            }
-
-            // Show progress for long-running operation
-            var progressDialog = await DialogHelper.ShowProgressAsync(
-                mainWindow, 
-                "Deleting Rule", 
-                "Please wait while the rule is being deleted...");
-
-            try
-            {
-                await _ruleService.DeleteRuleAsync(rule);
-                
-                // Remove from UI collection on UI thread
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    Rules.Remove(rule);
-                    // Clear selection if this was the selected rule
-                    if (SelectedRule == rule)
-                    {
-                        SelectedRule = null;
-                    }
-                });
-                
-                AddToRuleLog($"Deleted rule: {rule.Name}");
-            }
-            finally
-            {
-                // Close progress dialog
-                if (progressDialog is not null)
-                {
-                    await progressDialog.CloseAsync();
-                }
-            }
+                Rules.Remove(rule);
+            });
+            
+            AddToRuleLog($"Deleted rule: {rule.Name}");
         }
         catch (Exception ex)
         {
             AddToRuleLog($"Error deleting rule: {ex.Message}");
-            await ShowErrorAsync("Delete Rule Error", $"Failed to delete rule: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Moves a rule up in the list with improved UI updates
+    /// Moves a rule up in the list
     /// </summary>
     private async Task MoveRuleUpAsync(Rule? rule)
     {
         if (rule is null) return;
 
-        try
+        var index = Rules.IndexOf(rule);
+        if (index > 0)
         {
-            var index = Rules.IndexOf(rule);
-            if (index > 0)
-            {
-                // Update UI immediately
-                Rules.Move(index, index - 1);
-                
-                // Save the new order
-                await SaveRuleOrderAsync();
-                
-                AddToRuleLog($"Moved rule up: {rule.Name}");
-            }
-        }
-        catch (Exception ex)
-        {
-            AddToRuleLog($"Error moving rule up: {ex.Message}");
-            await ShowErrorAsync("Move Rule Error", $"Failed to move rule up: {ex.Message}");
+            Rules.Move(index, index - 1);
+            await SaveRuleOrderAsync();
         }
     }
 
     /// <summary>
-    /// Moves a rule down in the list with improved UI updates
+    /// Moves a rule down in the list
     /// </summary>
     private async Task MoveRuleDownAsync(Rule? rule)
     {
         if (rule is null) return;
 
-        try
+        var index = Rules.IndexOf(rule);
+        if (index < Rules.Count - 1)
         {
-            var index = Rules.IndexOf(rule);
-            if (index < Rules.Count - 1)
-            {
-                // Update UI immediately
-                Rules.Move(index, index + 1);
-                
-                // Save the new order
-                await SaveRuleOrderAsync();
-                
-                AddToRuleLog($"Moved rule down: {rule.Name}");
-            }
-        }
-        catch (Exception ex)
-        {
-            AddToRuleLog($"Error moving rule down: {ex.Message}");
-            await ShowErrorAsync("Move Rule Error", $"Failed to move rule down: {ex.Message}");
+            Rules.Move(index, index + 1);
+            await SaveRuleOrderAsync();
         }
     }
 
@@ -572,42 +447,11 @@ public class MainViewModel : ViewModelBase
     /// <summary>
     /// Shows the settings dialog
     /// </summary>
-    private async void ShowSettings()
+    private void ShowSettings()
     {
-        try
-        {
-            var mainWindow = Application.Current.MainWindow;
-            if (mainWindow is null)
-            {
-                AddToRuleLog("Error: Could not find main window for settings dialog");
-                return;
-            }
-
-            // Create and show settings window
-            var settingsWindow = new SettingsWindow
-            {
-                Owner = mainWindow
-            };
-            
-            var result = settingsWindow.ShowDialog();
-            if (result == true)
-            {
-                AddToRuleLog("Settings updated successfully");
-                
-                // Reload settings that might affect monitoring
-                var settings = _settingsService.Settings;
-                if (!string.IsNullOrEmpty(settings.LastWatchedFolder) && 
-                    settings.LastWatchedFolder != SelectedFolderPath)
-                {
-                    SelectedFolderPath = settings.LastWatchedFolder;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            AddToRuleLog($"Error opening settings: {ex.Message}");
-            await ShowErrorAsync("Settings Error", $"Failed to open settings: {ex.Message}");
-        }
+        // This would open a settings dialog
+        // For now, just log the action
+        AddToRuleLog("Settings dialog not implemented yet");
     }
 
     /// <summary>
@@ -615,46 +459,51 @@ public class MainViewModel : ViewModelBase
     /// </summary>
     private void ExitApplication()
     {
-        App.Current.Shutdown();
+        try
+        {
+            // Stop monitoring first
+            _ = StopMonitoringAsync();
+            
+            // Let the application know we're intentionally shutting down
+            if (Application.Current is App app)
+            {
+                app.IsShuttingDown = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log any errors but continue with shutdown
+            System.Diagnostics.Debug.WriteLine($"Error during shutdown: {ex.Message}");
+        }
+        finally
+        {
+            // Shut down the application
+            Application.Current.Shutdown();
+        }
     }
 
     /// <summary>
-    /// Shows an error dialog to the user
+    /// Disposes of resources used by this view model
     /// </summary>
-    private async Task ShowErrorAsync(string title, string message)
+    public void Dispose()
     {
-        try
+        if (!_disposed)
         {
-            var mainWindow = Application.Current.MainWindow;
-            if (mainWindow is not null)
-            {
-                await DialogHelper.ShowErrorAsync(mainWindow, title, message);
-            }
-        }
-        catch
-        {
-            // Fallback - if dialog fails, at least log it
-            AddToRuleLog($"Error: {title} - {message}");
-        }
-    }
+            // Unsubscribe from events to prevent memory leaks
+            _ruleService.RuleActionLogged -= OnRuleActionLogged;
+            _fileMonitorService.MonitoringStatusChanged -= OnMonitoringStatusChanged;
+            _fileMonitorService.FileEventLogged -= OnFileEventLogged;
 
-    /// <summary>
-    /// Shows an information dialog to the user
-    /// </summary>
-    private async Task ShowInformationAsync(string title, string message)
-    {
-        try
-        {
-            var mainWindow = Application.Current.MainWindow;
-            if (mainWindow is not null)
+            // Stop monitoring to ensure FileSystemWatcher is cleaned up
+            _ = StopMonitoringAsync();
+
+            // If FileMonitorService is IDisposable, dispose it here
+            if (_fileMonitorService is IDisposable disposableService)
             {
-                await DialogHelper.ShowInformationAsync(mainWindow, title, message);
+                disposableService.Dispose();
             }
-        }
-        catch
-        {
-            // Fallback - if dialog fails, at least log it
-            AddToRuleLog($"Info: {title} - {message}");
+
+            _disposed = true;
         }
     }
 }

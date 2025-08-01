@@ -35,13 +35,28 @@ public partial class MainWindow : MetroWindow
     /// </summary>
     protected override void OnClosing(CancelEventArgs e)
     {
-        // Check if we should minimize to tray instead of closing
-        if (DataContext is MainViewModel viewModel)
+        // Get if this is a real shutdown or just a minimize to tray
+        bool isRealShutdown = false;
+        
+        // Try to get the shutdown mode or use the exit command directly triggered
+        if (Application.Current is App app)
         {
-            // For now, just hide the window - in a real app, you'd check settings
+            isRealShutdown = app.IsShuttingDown;
+        }
+        
+        // Check if we should minimize to tray instead of closing
+        if (DataContext is MainViewModel viewModel && !isRealShutdown)
+        {
+            // For normal window close, just hide instead of closing
             e.Cancel = true;
             Hide();
             return;
+        }
+
+        // Application is shutting down, clean up resources
+        if (DataContext is MainViewModel vm)
+        {
+            vm.Dispose();
         }
 
         base.OnClosing(e);

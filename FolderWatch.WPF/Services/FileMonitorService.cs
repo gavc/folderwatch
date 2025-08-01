@@ -364,9 +364,23 @@ public class FileMonitorService : IFileMonitorService, IDisposable
         FileEventLogged?.Invoke(logMessage);
     }
 
+    /// <summary>
+    /// Disposes of resources used by this service
+    /// </summary>
     public void Dispose()
     {
-        StopMonitoringAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+        // Stop the file watcher without waiting for async completion
+        if (_watcher != null)
+        {
+            _watcher.EnableRaisingEvents = false;
+            _watcher.Created -= OnFileCreated;
+            _watcher.Renamed -= OnFileRenamed;
+            _watcher.Error -= OnWatcherError;
+            _watcher.Dispose();
+            _watcher = null;
+        }
+        
+        // Dispose the semaphore
         _processingLock?.Dispose();
     }
 }
