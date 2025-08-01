@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using FolderWatch.WPF.Helpers;
 using FolderWatch.WPF.Models;
 using FolderWatch.WPF.Services;
+using FolderWatch.WPF.Views;
 using Microsoft.Win32;
 
 namespace FolderWatch.WPF.ViewModels;
@@ -236,51 +238,83 @@ public class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Adds a new rule
+    /// Adds a new rule using the rule editor dialog
     /// </summary>
     private async void AddRule()
     {
-        // This would open a rule editor dialog
-        // For now, add a placeholder rule
-        var newRule = new Rule
-        {
-            Name = $"New Rule {Rules.Count + 1}",
-            Pattern = "*.txt",
-            Action = RuleAction.Move,
-            Destination = @"C:\Processed"
-        };
-
         try
         {
-            await _ruleService.SaveRuleAsync(newRule);
-            
-            // Add to UI collection immediately on UI thread
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            var mainWindow = Application.Current.MainWindow;
+            if (mainWindow is null)
             {
-                Rules.Add(newRule);
-            });
-            
-            AddToRuleLog($"Added new rule: {newRule.Name}");
+                AddToRuleLog("Error: Could not find main window for dialog");
+                return;
+            }
+
+            var newRule = RuleEditorDialog.ShowDialog(mainWindow);
+            if (newRule is not null)
+            {
+                await _ruleService.SaveRuleAsync(newRule);
+                
+                // Add to UI collection immediately on UI thread
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    Rules.Add(newRule);
+                });
+                
+                AddToRuleLog($"Added new rule: {newRule.Name}");
+            }
         }
         catch (Exception ex)
         {
             AddToRuleLog($"Error adding rule: {ex.Message}");
+            await ShowErrorAsync("Add Rule Error", $"Failed to add rule: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Edits an existing rule
+    /// Edits an existing rule using the rule editor dialog
     /// </summary>
-    private void EditRule(Rule? rule)
+    private async void EditRule(Rule? rule)
     {
         if (rule is null) return;
-        
-        // This would open a rule editor dialog with the selected rule
-        AddToRuleLog($"Edit rule: {rule.Name} (not implemented yet)");
+
+        try
+        {
+            var mainWindow = Application.Current.MainWindow;
+            if (mainWindow is null)
+            {
+                AddToRuleLog("Error: Could not find main window for dialog");
+                return;
+            }
+
+            var editedRule = RuleEditorDialog.ShowDialog(mainWindow, rule);
+            if (editedRule is not null)
+            {
+                await _ruleService.SaveRuleAsync(editedRule);
+                
+                // Update UI collection on UI thread
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    var index = Rules.IndexOf(rule);
+                    if (index >= 0)
+                    {
+                        Rules[index] = editedRule;
+                    }
+                });
+                
+                AddToRuleLog($"Updated rule: {editedRule.Name}");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddToRuleLog($"Error editing rule: {ex.Message}");
+            await ShowErrorAsync("Edit Rule Error", $"Failed to edit rule: {ex.Message}");
+        }
     }
 
     /// <summary>
-    /// Deletes a rule
+    /// Deletes a rule with confirmation dialog
     /// </summary>
     private async Task DeleteRuleAsync(Rule? rule)
     {
@@ -288,10 +322,29 @@ public class MainViewModel : ViewModelBase
 
         try
         {
+            var mainWindow = Application.Current.MainWindow;
+            if (mainWindow is null)
+            {
+                AddToRuleLog("Error: Could not find main window for dialog");
+                return;
+            }
+
+            // Show confirmation dialog
+            var confirmed = await DialogHelper.ShowConfirmationAsync(
+                mainWindow,
+                "Delete Rule",
+                $"Are you sure you want to delete the rule '{rule.Name}'?\n\nThis action cannot be undone.");
+
+            if (!confirmed)
+            {
+                AddToRuleLog($"Delete rule cancelled: {rule.Name}");
+                return;
+            }
+
             await _ruleService.DeleteRuleAsync(rule);
             
             // Remove from UI collection on UI thread
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Rules.Remove(rule);
             });
@@ -301,36 +354,63 @@ public class MainViewModel : ViewModelBase
         catch (Exception ex)
         {
             AddToRuleLog($"Error deleting rule: {ex.Message}");
+            await ShowErrorAsync("Delete Rule Error", $"Failed to delete rule: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Moves a rule up in the list
+    /// Moves a rule up in the list with improved UI updates
     /// </summary>
     private async Task MoveRuleUpAsync(Rule? rule)
     {
         if (rule is null) return;
 
-        var index = Rules.IndexOf(rule);
-        if (index > 0)
+        try
         {
-            Rules.Move(index, index - 1);
-            await SaveRuleOrderAsync();
+            var index = Rules.IndexOf(rule);
+            if (index > 0)
+            {
+                // Update UI immediately
+                Rules.Move(index, index - 1);
+                
+                // Save the new order
+                await SaveRuleOrderAsync();
+                
+                AddToRuleLog($"Moved rule up: {rule.Name}");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddToRuleLog($"Error moving rule up: {ex.Message}");
+            await ShowErrorAsync("Move Rule Error", $"Failed to move rule up: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Moves a rule down in the list
+    /// Moves a rule down in the list with improved UI updates
     /// </summary>
     private async Task MoveRuleDownAsync(Rule? rule)
     {
         if (rule is null) return;
 
-        var index = Rules.IndexOf(rule);
-        if (index < Rules.Count - 1)
+        try
         {
-            Rules.Move(index, index + 1);
-            await SaveRuleOrderAsync();
+            var index = Rules.IndexOf(rule);
+            if (index < Rules.Count - 1)
+            {
+                // Update UI immediately
+                Rules.Move(index, index + 1);
+                
+                // Save the new order
+                await SaveRuleOrderAsync();
+                
+                AddToRuleLog($"Moved rule down: {rule.Name}");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddToRuleLog($"Error moving rule down: {ex.Message}");
+            await ShowErrorAsync("Move Rule Error", $"Failed to move rule down: {ex.Message}");
         }
     }
 
@@ -458,5 +538,45 @@ public class MainViewModel : ViewModelBase
     private void ExitApplication()
     {
         App.Current.Shutdown();
+    }
+
+    /// <summary>
+    /// Shows an error dialog to the user
+    /// </summary>
+    private async Task ShowErrorAsync(string title, string message)
+    {
+        try
+        {
+            var mainWindow = Application.Current.MainWindow;
+            if (mainWindow is not null)
+            {
+                await DialogHelper.ShowErrorAsync(mainWindow, title, message);
+            }
+        }
+        catch
+        {
+            // Fallback - if dialog fails, at least log it
+            AddToRuleLog($"Error: {title} - {message}");
+        }
+    }
+
+    /// <summary>
+    /// Shows an information dialog to the user
+    /// </summary>
+    private async Task ShowInformationAsync(string title, string message)
+    {
+        try
+        {
+            var mainWindow = Application.Current.MainWindow;
+            if (mainWindow is not null)
+            {
+                await DialogHelper.ShowInformationAsync(mainWindow, title, message);
+            }
+        }
+        catch
+        {
+            // Fallback - if dialog fails, at least log it
+            AddToRuleLog($"Info: {title} - {message}");
+        }
     }
 }
