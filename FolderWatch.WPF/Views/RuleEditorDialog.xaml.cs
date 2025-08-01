@@ -44,6 +44,16 @@ public partial class RuleEditorDialog : MetroWindow
     }
 
     /// <summary>
+    /// Clean up resources when the dialog is closed
+    /// </summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _viewModel.Dispose();
+        base.OnClosed(e);
+    }
+
+    /// <summary>
     /// Shows the rule editor dialog
     /// </summary>
     /// <param name="owner">The owner window</param>

@@ -12,7 +12,7 @@ namespace FolderWatch.WPF.ViewModels;
 /// <summary>
 /// View model for the rule editor dialog
 /// </summary>
-public class RuleEditorViewModel : ViewModelBase
+public class RuleEditorViewModel : ViewModelBase, IDisposable
 {
     private string _name = string.Empty;
     private string _pattern = string.Empty;
@@ -469,5 +469,17 @@ public class RuleEditorViewModel : ViewModelBase
     {
         // Re-validate when any step property changes
         ValidateAll();
+    }
+
+    /// <summary>
+    /// Disposes of resources and unsubscribes from events
+    /// </summary>
+    public void Dispose()
+    {
+        // Unsubscribe from all step property changes to prevent memory leaks
+        foreach (var step in Steps)
+        {
+            step.PropertyChanged -= OnStepPropertyChanged;
+        }
     }
 }
