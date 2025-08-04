@@ -171,60 +171,94 @@ public class FileMonitorService : IFileMonitorService, IDisposable
     {
         var fileName = Path.GetFileName(filePath);
         var rules = await _ruleService.GetRulesAsync();
+        var matchedRules = 0;
 
         foreach (var rule in rules.Where(r => r.Enabled))
         {
             if (PatternMatcher.IsMatch(rule.Pattern, fileName))
             {
+                matchedRules++;
                 LogEvent($"Matched rule '{rule.Name}' for file: {fileName}");
                 
                 try
                 {
+                    var processedPath = filePath;
+                    
                     if (rule.HasMultipleSteps)
                     {
-                        await ExecuteRuleStepsAsync(rule, filePath);
+                        processedPath = await ExecuteRuleStepsAsync(rule, filePath);
                     }
                     else
                     {
-                        await ExecuteSingleRuleAsync(rule, filePath);
+                        processedPath = await ExecuteSingleRuleAsync(rule, filePath);
                     }
                     
                     LogEvent($"Successfully processed {fileName} with rule '{rule.Name}'");
-                    return; // Stop after first match
+                    
+                    // Only process with the first matching rule
+                    return;
                 }
                 catch (Exception ex)
                 {
-                    LogEvent($"Error executing rule '{rule.Name}': {ex.Message}", isError: true);
+                    LogEvent($"Error executing rule '{rule.Name}' on {fileName}: {ex.Message}", isError: true);
+                    // Continue with next rule if this one fails
                 }
             }
         }
 
-        LogEvent($"No matching rules found for: {fileName}");
+        if (matchedRules == 0)
+        {
+            LogEvent($"No matching rules found for: {fileName}");
+        }
     }
 
     /// <summary>
     /// Executes a single-action rule
     /// </summary>
-    private async Task ExecuteSingleRuleAsync(Rule rule, string filePath)
+    private async Task<string> ExecuteSingleRuleAsync(Rule rule, string filePath)
     {
-        await ExecuteActionAsync(rule.Action, filePath, rule.Destination, rule.NewName);
+        LogEvent($"Executing single action: {rule.Action}");
+        return await ExecuteActionAsync(rule.Action, filePath, rule.Destination, rule.NewName);
     }
 
     /// <summary>
     /// Executes a multi-step rule
     /// </summary>
-    private async Task ExecuteRuleStepsAsync(Rule rule, string filePath)
+    private async Task<string> ExecuteRuleStepsAsync(Rule rule, string filePath)
     {
         var currentPath = filePath;
+        var enabledSteps = rule.Steps.Where(s => s.Enabled).ToList();
         
-        foreach (var step in rule.Steps.Where(s => s.Enabled))
+        LogEvent($"Executing {enabledSteps.Count} steps for rule '{rule.Name}'");
+        
+        for (int i = 0; i < enabledSteps.Count; i++)
         {
-            var newPath = await ExecuteActionAsync(step.Action, currentPath, step.Destination, step.NewName);
-            if (!string.IsNullOrEmpty(newPath))
+            var step = enabledSteps[i];
+            try
             {
-                currentPath = newPath;
+                LogEvent($"Step {i + 1}/{enabledSteps.Count}: {step.Action}");
+                var newPath = await ExecuteActionAsync(step.Action, currentPath, step.Destination, step.NewName);
+                
+                if (!string.IsNullOrEmpty(newPath))
+                {
+                    currentPath = newPath;
+                }
+                
+                // If file was deleted, no further steps can be executed
+                if (step.Action == RuleAction.Delete && string.IsNullOrEmpty(newPath))
+                {
+                    LogEvent($"File deleted in step {i + 1}, stopping further processing");
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogEvent($"Error in step {i + 1} ({step.Action}): {ex.Message}", isError: true);
+                throw; // Re-throw to stop processing this rule
             }
         }
+        
+        return currentPath;
     }
 
     /// <summary>
@@ -324,19 +358,28 @@ public class FileMonitorService : IFileMonitorService, IDisposable
     {
         try
         {
-            // Safety check: Don't delete system or hidden files
+            var settings = _settingsService.Settings;
+            var deleteSettings = settings.DeleteSafetySettings;
+            
+            // Safety check: Don't delete system or hidden files based on settings
             var fileInfo = new FileInfo(filePath);
-            if (fileInfo.Attributes.HasFlag(FileAttributes.System) || 
-                fileInfo.Attributes.HasFlag(FileAttributes.Hidden))
+            
+            if (deleteSettings.SkipSystemFiles && fileInfo.Attributes.HasFlag(FileAttributes.System))
             {
-                LogEvent($"Skipped deleting system/hidden file: {Path.GetFileName(filePath)}", isError: true);
+                LogEvent($"Skipped deleting system file: {Path.GetFileName(filePath)}", isError: true);
+                return filePath;
+            }
+            
+            if (deleteSettings.SkipHiddenFiles && fileInfo.Attributes.HasFlag(FileAttributes.Hidden))
+            {
+                LogEvent($"Skipped deleting hidden file: {Path.GetFileName(filePath)}", isError: true);
                 return filePath;
             }
 
-            // Safety check: Don't delete files larger than 1GB without explicit configuration
-            if (fileInfo.Length > 1_073_741_824) // 1GB
+            // Safety check: Don't delete files larger than configured limit
+            if (fileInfo.Length > deleteSettings.MaxFileSizeBytes)
             {
-                LogEvent($"Skipped deleting large file (>1GB): {Path.GetFileName(filePath)}", isError: true);
+                LogEvent($"Skipped deleting large file (>{deleteSettings.MaxFileSizeBytes / 1_048_576}MB): {Path.GetFileName(filePath)}", isError: true);
                 return filePath;
             }
 
