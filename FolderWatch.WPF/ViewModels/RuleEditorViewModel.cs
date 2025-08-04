@@ -155,6 +155,15 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// Loads a rule for editing
+    /// </summary>
+    /// <param name="rule">The rule to edit</param>
+    public void LoadRule(Rule rule)
+    {
+        Initialize(rule);
+    }
+
+    /// <summary>
     /// Initializes the view model for editing an existing rule
     /// </summary>
     /// <param name="rule">The rule to edit</param>
@@ -351,19 +360,22 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
         
         try
         {
-            var dialog = new OpenFolderDialog
+            using var dialog = new System.Windows.Forms.FolderBrowserDialog
             {
-                Title = "Select Destination Folder"
+                Description = "Select Destination Folder",
+                ShowNewFolderButton = true,
+                UseDescriptionForTitle = true
             };
 
             if (!string.IsNullOrWhiteSpace(step.Destination) && Directory.Exists(step.Destination))
             {
-                dialog.InitialDirectory = step.Destination;
+                dialog.SelectedPath = step.Destination;
             }
 
-            if (dialog.ShowDialog() == true)
+            var result = dialog.ShowDialog();
+            if (result == System.Windows.Forms.DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
             {
-                step.Destination = dialog.FolderName;
+                step.Destination = dialog.SelectedPath;
                 ValidateAll(); // Re-validate after changing destination
             }
         }

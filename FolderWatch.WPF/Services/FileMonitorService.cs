@@ -245,7 +245,7 @@ public class FileMonitorService : IFileMonitorService, IDisposable
     }
 
     /// <summary>
-    /// Copies a file to the specified destination
+    /// Copies a file to the specified destination with conflict resolution
     /// </summary>
     private async Task<string> CopyFileAsync(string sourcePath, string destination, string newName)
     {
@@ -253,17 +253,24 @@ public class FileMonitorService : IFileMonitorService, IDisposable
             return sourcePath;
 
         Directory.CreateDirectory(destination);
-        var fileName = string.IsNullOrWhiteSpace(newName) ? Path.GetFileName(sourcePath) : newName;
+        
+        var fileName = !string.IsNullOrWhiteSpace(newName) 
+            ? RenamePatternProcessor.ProcessPattern(newName, sourcePath)
+            : Path.GetFileName(sourcePath);
+            
         var destPath = Path.Combine(destination, fileName);
         
-        await Task.Run(() => File.Copy(sourcePath, destPath, true));
+        // Handle file conflicts
+        destPath = GetUniqueFilePath(destPath);
+        
+        await Task.Run(() => File.Copy(sourcePath, destPath, false)); // Don't overwrite, use unique name instead
         LogEvent($"Copied to: {destPath}");
         
         return destPath;
     }
 
     /// <summary>
-    /// Moves a file to the specified destination
+    /// Moves a file to the specified destination with conflict resolution
     /// </summary>
     private async Task<string> MoveFileAsync(string sourcePath, string destination, string newName)
     {
@@ -271,88 +278,124 @@ public class FileMonitorService : IFileMonitorService, IDisposable
             return sourcePath;
 
         Directory.CreateDirectory(destination);
-        var fileName = string.IsNullOrWhiteSpace(newName) ? Path.GetFileName(sourcePath) : newName;
+        
+        var fileName = !string.IsNullOrWhiteSpace(newName) 
+            ? RenamePatternProcessor.ProcessPattern(newName, sourcePath)
+            : Path.GetFileName(sourcePath);
+            
         var destPath = Path.Combine(destination, fileName);
         
-        await Task.Run(() => File.Move(sourcePath, destPath, true));
+        // Handle file conflicts
+        destPath = GetUniqueFilePath(destPath);
+        
+        await Task.Run(() => File.Move(sourcePath, destPath, false)); // Don't overwrite, use unique name instead
         LogEvent($"Moved to: {destPath}");
         
         return destPath;
     }
 
     /// <summary>
-    /// Renames a file
+    /// Renames a file using pattern-based renaming with variable support
     /// </summary>
-    private async Task<string> RenameFileAsync(string filePath, string newName)
+    private async Task<string> RenameFileAsync(string filePath, string pattern)
     {
-        if (string.IsNullOrWhiteSpace(newName))
+        if (string.IsNullOrWhiteSpace(pattern))
             return filePath;
 
         var directory = Path.GetDirectoryName(filePath) ?? "";
-        var newPath = Path.Combine(directory, newName);
+        
+        // Process the pattern to substitute variables
+        var newFileName = RenamePatternProcessor.ProcessPattern(pattern, filePath);
+        var newPath = Path.Combine(directory, newFileName);
+        
+        // Handle file conflicts
+        newPath = GetUniqueFilePath(newPath);
         
         await Task.Run(() => File.Move(filePath, newPath, true));
-        LogEvent($"Renamed to: {newName}");
+        LogEvent($"Renamed to: {Path.GetFileName(newPath)}");
         
         return newPath;
     }
 
     /// <summary>
-    /// Deletes a file
+    /// Deletes a file with safety checks
     /// </summary>
     private async Task<string> DeleteFileAsync(string filePath)
     {
-        await Task.Run(() => File.Delete(filePath));
-        LogEvent($"Deleted: {Path.GetFileName(filePath)}");
-        
-        return "";
+        try
+        {
+            // Safety check: Don't delete system or hidden files
+            var fileInfo = new FileInfo(filePath);
+            if (fileInfo.Attributes.HasFlag(FileAttributes.System) || 
+                fileInfo.Attributes.HasFlag(FileAttributes.Hidden))
+            {
+                LogEvent($"Skipped deleting system/hidden file: {Path.GetFileName(filePath)}", isError: true);
+                return filePath;
+            }
+
+            // Safety check: Don't delete files larger than 1GB without explicit configuration
+            if (fileInfo.Length > 1_073_741_824) // 1GB
+            {
+                LogEvent($"Skipped deleting large file (>1GB): {Path.GetFileName(filePath)}", isError: true);
+                return filePath;
+            }
+
+            await Task.Run(() => File.Delete(filePath));
+            LogEvent($"Deleted: {Path.GetFileName(filePath)}");
+            
+            return "";
+        }
+        catch (Exception ex)
+        {
+            LogEvent($"Error deleting file {Path.GetFileName(filePath)}: {ex.Message}", isError: true);
+            return filePath; // Return original path if deletion failed
+        }
     }
 
     /// <summary>
-    /// Adds date/time to filename
+    /// Gets a unique file path by appending a number if the file already exists
     /// </summary>
-    private async Task<string> AddDateTimeToFileAsync(string filePath, string pattern)
+    /// <param name="originalPath">The original file path</param>
+    /// <returns>A unique file path</returns>
+    private static string GetUniqueFilePath(string originalPath)
     {
-        var directory = Path.GetDirectoryName(filePath) ?? "";
-        var fileName = Path.GetFileNameWithoutExtension(filePath);
-        var extension = Path.GetExtension(filePath);
-        
-        var dateTime = DateTime.Now.ToString(string.IsNullOrWhiteSpace(pattern) ? "yyyyMMdd_HHmmss" : pattern);
-        var newName = $"{dateTime}_{fileName}{extension}";
-        var newPath = Path.Combine(directory, newName);
-        
-        await Task.Run(() => File.Move(filePath, newPath, true));
-        LogEvent($"Added date/time: {newName}");
-        
-        return newPath;
-    }
+        if (!File.Exists(originalPath))
+            return originalPath;
 
-    /// <summary>
-    /// Adds sequential number to filename
-    /// </summary>
-    private async Task<string> AddNumberToFileAsync(string filePath, string pattern)
-    {
-        var directory = Path.GetDirectoryName(filePath) ?? "";
-        var fileName = Path.GetFileNameWithoutExtension(filePath);
-        var extension = Path.GetExtension(filePath);
+        var directory = Path.GetDirectoryName(originalPath) ?? "";
+        var fileNameWithoutExt = Path.GetFileNameWithoutExtension(originalPath);
+        var extension = Path.GetExtension(originalPath);
         
-        var counter = 1;
+        int counter = 1;
         string newPath;
-        string newName;
         
         do
         {
-            var numberPattern = string.IsNullOrWhiteSpace(pattern) ? counter.ToString("D3") : counter.ToString(pattern);
-            newName = $"{fileName}_{numberPattern}{extension}";
-            newPath = Path.Combine(directory, newName);
+            var newFileName = $"{fileNameWithoutExt}_{counter:000}{extension}";
+            newPath = Path.Combine(directory, newFileName);
             counter++;
         }
-        while (File.Exists(newPath) && counter < 10000); // Prevent infinite loop
-        
-        await Task.Run(() => File.Move(filePath, newPath, true));
-        LogEvent($"Added number: {newName}");
+        while (File.Exists(newPath) && counter < 1000); // Prevent infinite loop
         
         return newPath;
+    }
+
+    /// <summary>
+    /// Adds date/time to filename using pattern-based renaming
+    /// </summary>
+    private async Task<string> AddDateTimeToFileAsync(string filePath, string pattern)
+    {
+        var effectivePattern = string.IsNullOrWhiteSpace(pattern) ? "{datetime:yyyyMMdd_HHmmss}_{filename}" : pattern;
+        return await RenameFileAsync(filePath, effectivePattern);
+    }
+
+    /// <summary>
+    /// Adds sequential number to filename using pattern-based renaming
+    /// </summary>
+    private async Task<string> AddNumberToFileAsync(string filePath, string pattern)
+    {
+        var effectivePattern = string.IsNullOrWhiteSpace(pattern) ? "{filename}_{counter:000}" : pattern;
+        return await RenameFileAsync(filePath, effectivePattern);
     }
 
     /// <summary>
