@@ -112,6 +112,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -157,15 +158,26 @@
 
                 <!-- Pattern Help -->
                 <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
-                           Text="Examples: *.txt (all text files), photo_*.jpg (photos), document*.pdf (documents), *.* (all files)"
+                           Text="Examples: *.txt (all text files), photo_*.jpg (photos), document*.pdf (documents), *.{jpg,png} (multiple extensions)"
                            FontStyle="Italic"
                            FontSize="10"
-                           Foreground="Gray"/>
+                           Foreground="Gray"
+                           TextWrapping="Wrap"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- Pattern Variables Help -->
+        <GroupBox Grid.Row="1" Header="Rename Pattern Variables" Margin="10,0,10,5">
+            <Grid Margin="10">
+                <TextBlock Text="Available variables for rename patterns:&#x0a;• {filename} - Original filename without extension&#x0a;• {datetime} or {datetime:format} - Current date/time&#x0a;• {date} or {date:format} - Current date only&#x0a;• {time} or {time:format} - Current time only&#x0a;• {counter} or {counter:format} - Sequential number&#x0a;• {guid} - Short unique ID&#x0a;• {extension} - File extension without dot&#x0a;&#x0a;Examples: {filename}_backup, processed_{datetime:yyyyMMdd}_{filename}, archive_{counter:000}_{filename}"
+                           FontSize="10"
+                           Foreground="DarkBlue"
+                           TextWrapping="Wrap"/>
             </Grid>
         </GroupBox>
 
         <!-- Actions Section -->
-        <GroupBox Grid.Row="1" Header="Actions" Margin="10,0,10,10">
+        <GroupBox Grid.Row="2" Header="Actions" Margin="10,0,10,10">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*"/>
@@ -289,7 +301,7 @@
         </GroupBox>
 
         <!-- Validation Errors -->
-        <TextBlock Grid.Row="2" 
+        <TextBlock Grid.Row="3" 
                    Text="{Binding ValidationError}"
                    Foreground="Red"
                    Margin="10,0,10,10"
@@ -307,7 +319,7 @@
         </TextBlock>
 
         <!-- Dialog Buttons -->
-        <StackPanel Grid.Row="3" 
+        <StackPanel Grid.Row="4" 
                     Orientation="Horizontal" 
                     HorizontalAlignment="Right" 
                     Margin="10">

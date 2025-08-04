@@ -43,6 +43,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     public ICommand ToggleLiveLogCommand { get; }
     public ICommand ClearRuleLogCommand { get; }
     public ICommand ClearLiveLogCommand { get; }
+    public ICommand TestRuleCommand { get; }
     public ICommand ShowWindowCommand { get; }
     public ICommand ShowSettingsCommand { get; }
     public ICommand ExitApplicationCommand { get; }
@@ -125,6 +126,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         ToggleLiveLogCommand = new RelayCommand(() => LiveLogEnabled = !LiveLogEnabled);
         ClearRuleLogCommand = new RelayCommand(() => RuleLog.Clear());
         ClearLiveLogCommand = new RelayCommand(() => LiveLog.Clear());
+        TestRuleCommand = new AsyncRelayCommand(async () => await TestSelectedRuleAsync(), () => SelectedRule is not null);
         ShowWindowCommand = new RelayCommand(ShowWindow);
         ShowSettingsCommand = new RelayCommand(ShowSettings);
         ExitApplicationCommand = new RelayCommand(ExitApplication);
@@ -296,28 +298,21 @@ public class MainViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            // This would open a rule editor dialog
-            // For now, add a placeholder rule with better defaults
-            var newRule = new Rule
+            var editResult = ShowRuleEditor(null);
+            if (editResult.success && editResult.rule is not null)
             {
-                Name = $"New Rule {Rules.Count + 1}",
-                Pattern = "*.txt",
-                Action = RuleAction.Move,
-                Destination = Path.Combine(SelectedFolderPath ?? Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Processed"),
-                Enabled = true
-            };
-
-            await _ruleService.SaveRuleAsync(newRule);
-            
-            // Add to UI collection immediately on UI thread
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                Rules.Add(newRule);
-                SelectedRule = newRule; // Select the newly added rule
-            });
-            
-            AddToRuleLog($"Added new rule: {newRule.Name}");
-            StatusMessage = $"Added rule: {newRule.Name}";
+                await _ruleService.SaveRuleAsync(editResult.rule);
+                
+                // Add to UI collection immediately on UI thread
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    Rules.Add(editResult.rule);
+                    SelectedRule = editResult.rule; // Select the newly added rule
+                });
+                
+                AddToRuleLog($"Added new rule: {editResult.rule.Name}");
+                StatusMessage = $"Added rule: {editResult.rule.Name}";
+            }
         }
         catch (Exception ex)
         {
@@ -340,10 +335,38 @@ public class MainViewModel : ViewModelBase, IDisposable
         
         try
         {
-            // This would open a rule editor dialog with the selected rule
-            // For now, just provide feedback
-            AddToRuleLog($"Edit rule: {rule.Name} (Rule editor dialog not implemented yet)");
-            StatusMessage = $"Editing rule: {rule.Name} (Feature coming soon)";
+            var editResult = ShowRuleEditor(rule);
+            if (editResult.success && editResult.rule is not null)
+            {
+                // Update the rule in the service
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _ruleService.SaveRuleAsync(editResult.rule);
+                        
+                        // Update UI on main thread
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            var index = Rules.IndexOf(rule);
+                            if (index >= 0)
+                            {
+                                Rules[index] = editResult.rule;
+                                SelectedRule = editResult.rule;
+                            }
+                        });
+                        
+                        AddToRuleLog($"Updated rule: {editResult.rule.Name}");
+                        StatusMessage = $"Rule '{editResult.rule.Name}' updated successfully";
+                    }
+                    catch (Exception ex)
+                    {
+                        var errorMessage = $"Error saving rule changes: {ex.Message}";
+                        StatusMessage = errorMessage;
+                        AddToRuleLog(errorMessage);
+                    }
+                });
+            }
         }
         catch (Exception ex)
         {
@@ -548,6 +571,124 @@ public class MainViewModel : ViewModelBase, IDisposable
                 AddToLiveLog(message);
             }
         });
+    }
+
+    /// <summary>
+    /// Tests the selected rule against a sample filename
+    /// </summary>
+    private async Task TestSelectedRuleAsync()
+    {
+        if (SelectedRule is null)
+        {
+            StatusMessage = "No rule selected for testing";
+            return;
+        }
+
+        try
+        {
+            // Get test filename from user
+            var inputDialog = new Views.InputDialog("Test Rule", "Enter a filename to test the rule against:", "sample.txt");
+            if (inputDialog.ShowDialog() != true || string.IsNullOrWhiteSpace(inputDialog.InputText))
+                return;
+
+            var testFileName = inputDialog.InputText;
+
+            var testResult = await _ruleService.TestRuleAsync(SelectedRule, testFileName);
+            
+            // Display results
+            var resultMessage = $"Rule Test Results:\n\n{testResult.Summary}\n\n";
+            
+            if (testResult.IsMatch && testResult.IsValid)
+            {
+                resultMessage += "Actions that would be performed:\n";
+                foreach (var preview in testResult.ActionPreviews)
+                {
+                    resultMessage += $"• {preview.Description}";
+                    if (preview.HasWarnings)
+                    {
+                        resultMessage += $" ⚠️ {preview.WarningMessage}";
+                    }
+                    if (!preview.WouldSucceed)
+                    {
+                        resultMessage += $" ❌ {preview.ErrorMessage}";
+                    }
+                    resultMessage += "\n";
+                }
+            }
+            else if (!testResult.IsValid)
+            {
+                resultMessage += "Validation Errors:\n";
+                foreach (var error in testResult.ValidationErrors)
+                {
+                    resultMessage += $"• {error}\n";
+                }
+            }
+
+            System.Windows.MessageBox.Show(
+                resultMessage,
+                "Rule Test Results",
+                System.Windows.MessageBoxButton.OK,
+                testResult.IsMatch && testResult.IsValid ? System.Windows.MessageBoxImage.Information : System.Windows.MessageBoxImage.Warning);
+
+            AddToRuleLog($"Tested rule '{SelectedRule.Name}' against '{testFileName}': {(testResult.IsMatch ? "Match" : "No match")}");
+            StatusMessage = $"Rule test completed: {(testResult.IsMatch ? "Match" : "No match")}";
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = $"Error testing rule: {ex.Message}";
+            StatusMessage = errorMessage;
+            AddToRuleLog(errorMessage);
+            
+            System.Windows.MessageBox.Show(
+                errorMessage,
+                "Rule Test Error",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// Shows the rule editor dialog
+    /// </summary>
+    /// <param name="rule">The rule to edit, or null to create a new rule</param>
+    /// <returns>A tuple indicating success and the resulting rule</returns>
+    private (bool success, Rule? rule) ShowRuleEditor(Rule? rule)
+    {
+        try
+        {
+            var dialog = new Views.RuleEditorDialog();
+            var viewModel = new RuleEditorViewModel();
+            
+            // Initialize the view model with the rule data
+            if (rule is not null)
+            {
+                viewModel.LoadRule(rule);
+            }
+            else
+            {
+                // Set defaults for new rule
+                viewModel.Name = $"New Rule {Rules.Count + 1}";
+                viewModel.Pattern = "*.txt";
+                viewModel.Enabled = true;
+            }
+            
+            dialog.DataContext = viewModel;
+            dialog.Owner = System.Windows.Application.Current.MainWindow;
+            
+            var dialogResult = dialog.ShowDialog();
+            if (dialogResult == true && viewModel.DialogResult)
+            {
+                return (true, viewModel.CreateRule());
+            }
+            
+            return (false, null);
+        }
+        catch (Exception ex)
+        {
+            AddToRuleLog($"Error opening rule editor: {ex.Message}");
+            StatusMessage = $"Error opening rule editor: {ex.Message}";
+            return (false, null);
+        }
     }
 
     /// <summary>

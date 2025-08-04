@@ -171,60 +171,94 @@ public class FileMonitorService : IFileMonitorService, IDisposable
     {
         var fileName = Path.GetFileName(filePath);
         var rules = await _ruleService.GetRulesAsync();
+        var matchedRules = 0;
 
         foreach (var rule in rules.Where(r => r.Enabled))
         {
             if (PatternMatcher.IsMatch(rule.Pattern, fileName))
             {
+                matchedRules++;
                 LogEvent($"Matched rule '{rule.Name}' for file: {fileName}");
                 
                 try
                 {
+                    var processedPath = filePath;
+                    
                     if (rule.HasMultipleSteps)
                     {
-                        await ExecuteRuleStepsAsync(rule, filePath);
+                        processedPath = await ExecuteRuleStepsAsync(rule, filePath);
                     }
                     else
                     {
-                        await ExecuteSingleRuleAsync(rule, filePath);
+                        processedPath = await ExecuteSingleRuleAsync(rule, filePath);
                     }
                     
                     LogEvent($"Successfully processed {fileName} with rule '{rule.Name}'");
-                    return; // Stop after first match
+                    
+                    // Only process with the first matching rule
+                    return;
                 }
                 catch (Exception ex)
                 {
-                    LogEvent($"Error executing rule '{rule.Name}': {ex.Message}", isError: true);
+                    LogEvent($"Error executing rule '{rule.Name}' on {fileName}: {ex.Message}", isError: true);
+                    // Continue with next rule if this one fails
                 }
             }
         }
 
-        LogEvent($"No matching rules found for: {fileName}");
+        if (matchedRules == 0)
+        {
+            LogEvent($"No matching rules found for: {fileName}");
+        }
     }
 
     /// <summary>
     /// Executes a single-action rule
     /// </summary>
-    private async Task ExecuteSingleRuleAsync(Rule rule, string filePath)
+    private async Task<string> ExecuteSingleRuleAsync(Rule rule, string filePath)
     {
-        await ExecuteActionAsync(rule.Action, filePath, rule.Destination, rule.NewName);
+        LogEvent($"Executing single action: {rule.Action}");
+        return await ExecuteActionAsync(rule.Action, filePath, rule.Destination, rule.NewName);
     }
 
     /// <summary>
     /// Executes a multi-step rule
     /// </summary>
-    private async Task ExecuteRuleStepsAsync(Rule rule, string filePath)
+    private async Task<string> ExecuteRuleStepsAsync(Rule rule, string filePath)
     {
         var currentPath = filePath;
+        var enabledSteps = rule.Steps.Where(s => s.Enabled).ToList();
         
-        foreach (var step in rule.Steps.Where(s => s.Enabled))
+        LogEvent($"Executing {enabledSteps.Count} steps for rule '{rule.Name}'");
+        
+        for (int i = 0; i < enabledSteps.Count; i++)
         {
-            var newPath = await ExecuteActionAsync(step.Action, currentPath, step.Destination, step.NewName);
-            if (!string.IsNullOrEmpty(newPath))
+            var step = enabledSteps[i];
+            try
             {
-                currentPath = newPath;
+                LogEvent($"Step {i + 1}/{enabledSteps.Count}: {step.Action}");
+                var newPath = await ExecuteActionAsync(step.Action, currentPath, step.Destination, step.NewName);
+                
+                if (!string.IsNullOrEmpty(newPath))
+                {
+                    currentPath = newPath;
+                }
+                
+                // If file was deleted, no further steps can be executed
+                if (step.Action == RuleAction.Delete && string.IsNullOrEmpty(newPath))
+                {
+                    LogEvent($"File deleted in step {i + 1}, stopping further processing");
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogEvent($"Error in step {i + 1} ({step.Action}): {ex.Message}", isError: true);
+                throw; // Re-throw to stop processing this rule
             }
         }
+        
+        return currentPath;
     }
 
     /// <summary>
@@ -245,7 +279,7 @@ public class FileMonitorService : IFileMonitorService, IDisposable
     }
 
     /// <summary>
-    /// Copies a file to the specified destination
+    /// Copies a file to the specified destination with conflict resolution
     /// </summary>
     private async Task<string> CopyFileAsync(string sourcePath, string destination, string newName)
     {
@@ -253,17 +287,24 @@ public class FileMonitorService : IFileMonitorService, IDisposable
             return sourcePath;
 
         Directory.CreateDirectory(destination);
-        var fileName = string.IsNullOrWhiteSpace(newName) ? Path.GetFileName(sourcePath) : newName;
+        
+        var fileName = !string.IsNullOrWhiteSpace(newName) 
+            ? RenamePatternProcessor.ProcessPattern(newName, sourcePath)
+            : Path.GetFileName(sourcePath);
+            
         var destPath = Path.Combine(destination, fileName);
         
-        await Task.Run(() => File.Copy(sourcePath, destPath, true));
+        // Handle file conflicts
+        destPath = GetUniqueFilePath(destPath);
+        
+        await Task.Run(() => File.Copy(sourcePath, destPath, false)); // Don't overwrite, use unique name instead
         LogEvent($"Copied to: {destPath}");
         
         return destPath;
     }
 
     /// <summary>
-    /// Moves a file to the specified destination
+    /// Moves a file to the specified destination with conflict resolution
     /// </summary>
     private async Task<string> MoveFileAsync(string sourcePath, string destination, string newName)
     {
@@ -271,88 +312,133 @@ public class FileMonitorService : IFileMonitorService, IDisposable
             return sourcePath;
 
         Directory.CreateDirectory(destination);
-        var fileName = string.IsNullOrWhiteSpace(newName) ? Path.GetFileName(sourcePath) : newName;
+        
+        var fileName = !string.IsNullOrWhiteSpace(newName) 
+            ? RenamePatternProcessor.ProcessPattern(newName, sourcePath)
+            : Path.GetFileName(sourcePath);
+            
         var destPath = Path.Combine(destination, fileName);
         
-        await Task.Run(() => File.Move(sourcePath, destPath, true));
+        // Handle file conflicts
+        destPath = GetUniqueFilePath(destPath);
+        
+        await Task.Run(() => File.Move(sourcePath, destPath, false)); // Don't overwrite, use unique name instead
         LogEvent($"Moved to: {destPath}");
         
         return destPath;
     }
 
     /// <summary>
-    /// Renames a file
+    /// Renames a file using pattern-based renaming with variable support
     /// </summary>
-    private async Task<string> RenameFileAsync(string filePath, string newName)
+    private async Task<string> RenameFileAsync(string filePath, string pattern)
     {
-        if (string.IsNullOrWhiteSpace(newName))
+        if (string.IsNullOrWhiteSpace(pattern))
             return filePath;
 
         var directory = Path.GetDirectoryName(filePath) ?? "";
-        var newPath = Path.Combine(directory, newName);
+        
+        // Process the pattern to substitute variables
+        var newFileName = RenamePatternProcessor.ProcessPattern(pattern, filePath);
+        var newPath = Path.Combine(directory, newFileName);
+        
+        // Handle file conflicts
+        newPath = GetUniqueFilePath(newPath);
         
         await Task.Run(() => File.Move(filePath, newPath, true));
-        LogEvent($"Renamed to: {newName}");
+        LogEvent($"Renamed to: {Path.GetFileName(newPath)}");
         
         return newPath;
     }
 
     /// <summary>
-    /// Deletes a file
+    /// Deletes a file with safety checks
     /// </summary>
     private async Task<string> DeleteFileAsync(string filePath)
     {
-        await Task.Run(() => File.Delete(filePath));
-        LogEvent($"Deleted: {Path.GetFileName(filePath)}");
-        
-        return "";
+        try
+        {
+            var settings = _settingsService.Settings;
+            var deleteSettings = settings.DeleteSafetySettings;
+            
+            // Safety check: Don't delete system or hidden files based on settings
+            var fileInfo = new FileInfo(filePath);
+            
+            if (deleteSettings.SkipSystemFiles && fileInfo.Attributes.HasFlag(FileAttributes.System))
+            {
+                LogEvent($"Skipped deleting system file: {Path.GetFileName(filePath)}", isError: true);
+                return filePath;
+            }
+            
+            if (deleteSettings.SkipHiddenFiles && fileInfo.Attributes.HasFlag(FileAttributes.Hidden))
+            {
+                LogEvent($"Skipped deleting hidden file: {Path.GetFileName(filePath)}", isError: true);
+                return filePath;
+            }
+
+            // Safety check: Don't delete files larger than configured limit
+            if (fileInfo.Length > deleteSettings.MaxFileSizeBytes)
+            {
+                LogEvent($"Skipped deleting large file (>{deleteSettings.MaxFileSizeBytes / 1_048_576}MB): {Path.GetFileName(filePath)}", isError: true);
+                return filePath;
+            }
+
+            await Task.Run(() => File.Delete(filePath));
+            LogEvent($"Deleted: {Path.GetFileName(filePath)}");
+            
+            return "";
+        }
+        catch (Exception ex)
+        {
+            LogEvent($"Error deleting file {Path.GetFileName(filePath)}: {ex.Message}", isError: true);
+            return filePath; // Return original path if deletion failed
+        }
     }
 
     /// <summary>
-    /// Adds date/time to filename
+    /// Gets a unique file path by appending a number if the file already exists
     /// </summary>
-    private async Task<string> AddDateTimeToFileAsync(string filePath, string pattern)
+    /// <param name="originalPath">The original file path</param>
+    /// <returns>A unique file path</returns>
+    private static string GetUniqueFilePath(string originalPath)
     {
-        var directory = Path.GetDirectoryName(filePath) ?? "";
-        var fileName = Path.GetFileNameWithoutExtension(filePath);
-        var extension = Path.GetExtension(filePath);
-        
-        var dateTime = DateTime.Now.ToString(string.IsNullOrWhiteSpace(pattern) ? "yyyyMMdd_HHmmss" : pattern);
-        var newName = $"{dateTime}_{fileName}{extension}";
-        var newPath = Path.Combine(directory, newName);
-        
-        await Task.Run(() => File.Move(filePath, newPath, true));
-        LogEvent($"Added date/time: {newName}");
-        
-        return newPath;
-    }
+        if (!File.Exists(originalPath))
+            return originalPath;
 
-    /// <summary>
-    /// Adds sequential number to filename
-    /// </summary>
-    private async Task<string> AddNumberToFileAsync(string filePath, string pattern)
-    {
-        var directory = Path.GetDirectoryName(filePath) ?? "";
-        var fileName = Path.GetFileNameWithoutExtension(filePath);
-        var extension = Path.GetExtension(filePath);
+        var directory = Path.GetDirectoryName(originalPath) ?? "";
+        var fileNameWithoutExt = Path.GetFileNameWithoutExtension(originalPath);
+        var extension = Path.GetExtension(originalPath);
         
-        var counter = 1;
+        int counter = 1;
         string newPath;
-        string newName;
         
         do
         {
-            var numberPattern = string.IsNullOrWhiteSpace(pattern) ? counter.ToString("D3") : counter.ToString(pattern);
-            newName = $"{fileName}_{numberPattern}{extension}";
-            newPath = Path.Combine(directory, newName);
+            var newFileName = $"{fileNameWithoutExt}_{counter:000}{extension}";
+            newPath = Path.Combine(directory, newFileName);
             counter++;
         }
-        while (File.Exists(newPath) && counter < 10000); // Prevent infinite loop
-        
-        await Task.Run(() => File.Move(filePath, newPath, true));
-        LogEvent($"Added number: {newName}");
+        while (File.Exists(newPath) && counter < 1000); // Prevent infinite loop
         
         return newPath;
+    }
+
+    /// <summary>
+    /// Adds date/time to filename using pattern-based renaming
+    /// </summary>
+    private async Task<string> AddDateTimeToFileAsync(string filePath, string pattern)
+    {
+        var effectivePattern = string.IsNullOrWhiteSpace(pattern) ? "{datetime:yyyyMMdd_HHmmss}_{filename}" : pattern;
+        return await RenameFileAsync(filePath, effectivePattern);
+    }
+
+    /// <summary>
+    /// Adds sequential number to filename using pattern-based renaming
+    /// </summary>
+    private async Task<string> AddNumberToFileAsync(string filePath, string pattern)
+    {
+        var effectivePattern = string.IsNullOrWhiteSpace(pattern) ? "{filename}_{counter:000}" : pattern;
+        return await RenameFileAsync(filePath, effectivePattern);
     }
 
     /// <summary>

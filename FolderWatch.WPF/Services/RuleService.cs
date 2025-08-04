@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
+using FolderWatch.WPF.Helpers;
 using FolderWatch.WPF.Models;
 
 namespace FolderWatch.WPF.Services;
@@ -219,6 +220,218 @@ public class RuleService : IRuleService, IDisposable
         {
             LogAction($"Error saving rules: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Tests a rule against a filename without executing actions
+    /// </summary>
+    /// <param name="rule">The rule to test</param>
+    /// <param name="fileName">The filename to test against</param>
+    /// <returns>Test result with match status and preview of actions</returns>
+    public async Task<RuleTestResult> TestRuleAsync(Rule rule, string fileName)
+    {
+        var result = new RuleTestResult
+        {
+            Rule = rule,
+            FileName = fileName,
+            IsMatch = PatternMatcher.IsMatch(rule.Pattern, fileName)
+        };
+
+        if (!result.IsMatch)
+        {
+            return result;
+        }
+
+        // Validate the rule
+        result.ValidationErrors.AddRange(ValidateRule(rule));
+
+        if (result.IsValid)
+        {
+            // Generate action previews
+            result.ActionPreviews = await GenerateActionPreviewsAsync(rule, fileName);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Validates a rule and returns any errors
+    /// </summary>
+    /// <param name="rule">The rule to validate</param>
+    /// <returns>List of validation errors</returns>
+    private static List<string> ValidateRule(Rule rule)
+    {
+        var errors = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(rule.Name))
+        {
+            errors.Add("Rule name is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(rule.Pattern))
+        {
+            errors.Add("File pattern is required");
+        }
+        else if (!PatternMatcher.IsValidPattern(rule.Pattern))
+        {
+            errors.Add("File pattern is invalid");
+        }
+
+        // Validate steps if using multi-step workflow
+        if (rule.HasMultipleSteps)
+        {
+            for (int i = 0; i < rule.Steps.Count; i++)
+            {
+                var step = rule.Steps[i];
+                var stepErrors = step.Validate();
+                foreach (var error in stepErrors)
+                {
+                    errors.Add($"Step {i + 1}: {error}");
+                }
+            }
+        }
+
+        return errors;
+    }
+
+    /// <summary>
+    /// Generates previews of what actions would be performed
+    /// </summary>
+    /// <param name="rule">The rule to preview</param>
+    /// <param name="fileName">The filename to use for the preview</param>
+    /// <returns>List of action previews</returns>
+    private async Task<List<RuleActionPreview>> GenerateActionPreviewsAsync(Rule rule, string fileName)
+    {
+        var previews = new List<RuleActionPreview>();
+        var currentPath = fileName; // Start with just the filename
+
+        if (rule.HasMultipleSteps)
+        {
+            // Preview multi-step workflow
+            foreach (var step in rule.Steps.Where(s => s.Enabled))
+            {
+                var preview = await GenerateActionPreviewAsync(step.Action, currentPath, step.Destination, step.NewName);
+                previews.Add(preview);
+                currentPath = preview.ResultPath;
+            }
+        }
+        else
+        {
+            // Preview single action
+            var preview = await GenerateActionPreviewAsync(rule.Action, currentPath, rule.Destination, rule.NewName);
+            previews.Add(preview);
+        }
+
+        return previews;
+    }
+
+    /// <summary>
+    /// Generates a preview for a single action
+    /// </summary>
+    /// <param name="action">The action to preview</param>
+    /// <param name="currentPath">The current file path</param>
+    /// <param name="destination">The destination folder (for copy/move)</param>
+    /// <param name="newName">The new name pattern (for rename operations)</param>
+    /// <returns>Action preview</returns>
+    private async Task<RuleActionPreview> GenerateActionPreviewAsync(RuleAction action, string currentPath, string destination, string newName)
+    {
+        var preview = new RuleActionPreview
+        {
+            Action = action,
+            CurrentPath = currentPath
+        };
+
+        try
+        {
+            switch (action)
+            {
+                case RuleAction.Copy:
+                    preview.ResultPath = await PreviewCopyActionAsync(currentPath, destination, newName);
+                    preview.Description = $"Copy to: {preview.ResultPath}";
+                    break;
+
+                case RuleAction.Move:
+                    preview.ResultPath = await PreviewMoveActionAsync(currentPath, destination, newName);
+                    preview.Description = $"Move to: {preview.ResultPath}";
+                    break;
+
+                case RuleAction.Rename:
+                    preview.ResultPath = await PreviewRenameActionAsync(currentPath, newName);
+                    preview.Description = $"Rename to: {Path.GetFileName(preview.ResultPath)}";
+                    break;
+
+                case RuleAction.Delete:
+                    preview.ResultPath = "";
+                    preview.Description = "Delete file";
+                    preview.HasWarnings = true;
+                    preview.WarningMessage = "This action will permanently delete the file";
+                    break;
+
+                case RuleAction.DateTime:
+                    var datePattern = string.IsNullOrWhiteSpace(newName) ? "{datetime:yyyyMMdd_HHmmss}_{filename}" : newName;
+                    preview.ResultPath = await PreviewRenameActionAsync(currentPath, datePattern);
+                    preview.Description = $"Add date/time: {Path.GetFileName(preview.ResultPath)}";
+                    break;
+
+                case RuleAction.Numbering:
+                    var numberPattern = string.IsNullOrWhiteSpace(newName) ? "{filename}_{counter:000}" : newName;
+                    preview.ResultPath = await PreviewRenameActionAsync(currentPath, numberPattern);
+                    preview.Description = $"Add number: {Path.GetFileName(preview.ResultPath)}";
+                    break;
+
+                default:
+                    preview.ResultPath = currentPath;
+                    preview.Description = "Unknown action";
+                    preview.WouldSucceed = false;
+                    preview.ErrorMessage = "Unknown action type";
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            preview.WouldSucceed = false;
+            preview.ErrorMessage = ex.Message;
+            preview.Description = $"Error: {ex.Message}";
+        }
+
+        return preview;
+    }
+
+    /// <summary>
+    /// Previews a copy action
+    /// </summary>
+    private async Task<string> PreviewCopyActionAsync(string currentPath, string destination, string newName)
+    {
+        if (string.IsNullOrWhiteSpace(destination))
+            return currentPath;
+
+        var fileName = !string.IsNullOrWhiteSpace(newName) 
+            ? RenamePatternProcessor.ProcessPattern(newName, currentPath)
+            : Path.GetFileName(currentPath);
+
+        return await Task.FromResult(Path.Combine(destination, fileName));
+    }
+
+    /// <summary>
+    /// Previews a move action
+    /// </summary>
+    private async Task<string> PreviewMoveActionAsync(string currentPath, string destination, string newName)
+    {
+        return await PreviewCopyActionAsync(currentPath, destination, newName);
+    }
+
+    /// <summary>
+    /// Previews a rename action
+    /// </summary>
+    private async Task<string> PreviewRenameActionAsync(string currentPath, string pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+            return currentPath;
+
+        var directory = Path.GetDirectoryName(currentPath) ?? "";
+        var newFileName = RenamePatternProcessor.ProcessPattern(pattern, currentPath);
+        
+        return await Task.FromResult(Path.Combine(directory, newFileName));
     }
 
     /// <summary>

@@ -28,6 +28,14 @@ public interface IRuleService
     Task ReorderRulesAsync(IEnumerable<Rule> rules);
 
     /// <summary>
+    /// Tests a rule against a filename without executing actions
+    /// </summary>
+    /// <param name="rule">The rule to test</param>
+    /// <param name="fileName">The filename to test against</param>
+    /// <returns>Test result with match status and preview of actions</returns>
+    Task<RuleTestResult> TestRuleAsync(Rule rule, string fileName);
+
+    /// <summary>
     /// Event raised when a rule action is logged
     /// </summary>
     event Action<string>? RuleActionLogged;

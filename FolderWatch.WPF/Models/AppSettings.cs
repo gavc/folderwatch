@@ -34,6 +34,37 @@ public class FileRetrySettings
 }
 
 /// <summary>
+/// Safety settings for delete operations
+/// </summary>
+public class DeleteSafetySettings
+{
+    /// <summary>
+    /// Skip deleting system files
+    /// </summary>
+    public bool SkipSystemFiles { get; set; } = true;
+    
+    /// <summary>
+    /// Skip deleting hidden files
+    /// </summary>
+    public bool SkipHiddenFiles { get; set; } = true;
+    
+    /// <summary>
+    /// Maximum file size in bytes that can be deleted (1GB default)
+    /// </summary>
+    public long MaxFileSizeBytes { get; set; } = 1_073_741_824; // 1GB
+    
+    /// <summary>
+    /// Require confirmation for delete operations
+    /// </summary>
+    public bool RequireConfirmation { get; set; } = false;
+    
+    /// <summary>
+    /// Move to recycle bin instead of permanent deletion
+    /// </summary>
+    public bool UseRecycleBin { get; set; } = true;
+}
+
+/// <summary>
 /// Application settings and preferences
 /// </summary>
 public class AppSettings
@@ -127,6 +158,11 @@ public class AppSettings
     /// File processing retry configuration
     /// </summary>
     public FileRetrySettings FileRetrySettings { get; set; } = new();
+    
+    /// <summary>
+    /// Delete operation safety configuration
+    /// </summary>
+    public DeleteSafetySettings DeleteSafetySettings { get; set; } = new();
     
     // Theme Settings
     /// <summary>
