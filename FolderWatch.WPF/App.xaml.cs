@@ -1,6 +1,5 @@
 ﻿using System.Configuration;
 using System.Data;
-using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using FolderWatch.WPF.Services;
@@ -13,7 +12,7 @@ namespace FolderWatch.WPF;
 /// Interaction logic for App.xaml
 /// Main application class with dependency injection setup
 /// </summary>
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private IHost? _host;
     
@@ -32,7 +31,7 @@ public partial class App : Application
     /// </summary>
     public IServiceProvider Services => _host?.Services ?? throw new InvalidOperationException("Services not initialized");
 
-    protected override async void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(System.Windows.StartupEventArgs e)
     {
         // Initialize dependency injection container
         _host = Host.CreateDefaultBuilder()
@@ -48,7 +47,7 @@ public partial class App : Application
         base.OnStartup(e);
     }
 
-    protected override async void OnExit(ExitEventArgs e)
+    protected override async void OnExit(System.Windows.ExitEventArgs e)
     {
         // Set shutdown flag to inform other components
         IsShuttingDown = true;
@@ -78,7 +77,7 @@ public partial class App : Application
         services.AddSingleton<ISettingsService, SettingsService>();
 
         // Register ViewModels
-        services.AddSingleton<MainViewModel>();
+        services.AddTransient<MainViewModel>();
         services.AddTransient<SettingsViewModel>();
 
         // Register the main window
