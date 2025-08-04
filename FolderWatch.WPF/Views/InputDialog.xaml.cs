@@ -57,7 +57,7 @@ public partial class InputDialog : MetroWindow
     /// <summary>
     /// Handles key down events in the input text box
     /// </summary>
-    private void InputTextBox_KeyDown(object sender, KeyEventArgs e)
+    private void InputTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Enter)
         {

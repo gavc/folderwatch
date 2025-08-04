@@ -2,6 +2,60 @@
 
 A modern WPF application for monitoring folders and applying automated rules to files using MahApps.Metro UI framework.
 
+## Getting Started
+
+### Prerequisites
+- .NET 8.0 SDK or later
+- Windows 10/11
+
+### Running the Application
+
+**Important**: The application must be run from the `FolderWatch.WPF` folder to function correctly.
+
+```powershell
+# Navigate to the project folder first
+cd FolderWatch.WPF
+
+# Then run the application
+dotnet run
+```
+
+Or use the combined command:
+```powershell
+cd c:\temp\folderwatch\FolderWatch.WPF; dotnet run
+```
+
+### Building the Application
+
+```powershell
+# Build from the project folder
+cd FolderWatch.WPF
+dotnet build
+
+# Or build the entire solution from root
+dotnet build folderwatch.sln
+```
+
+### Properly Exiting the Application
+
+The application is designed to minimize to the system tray when you click the X button. To properly exit:
+
+**Method 1: Tray Icon (Recommended)**
+1. Right-click the system tray icon
+2. Select "Exit" from the context menu
+
+**Method 2: File Menu**
+1. Use the File menu → Exit
+
+**Method 3: Keyboard Shortcuts**
+- `Alt + F4` (standard Windows shortcut)
+- `Ctrl + Q` (alternative shortcut)
+
+**If the application doesn't exit properly**, you can force terminate it:
+```powershell
+taskkill /F /IM "FolderWatch.WPF.exe"
+```
+
 ## Features
 
 - **Modern Metro UI** - Built with MahApps.Metro for a clean, modern interface

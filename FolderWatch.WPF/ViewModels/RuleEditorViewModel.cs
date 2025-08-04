@@ -124,7 +124,12 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Whether the dialog was accepted
     /// </summary>
-    public bool DialogResult { get; private set; }
+    public bool DialogResult
+    {
+        get => _dialogResult;
+        private set => SetProperty(ref _dialogResult, value);
+    }
+    private bool _dialogResult;
 
     /// <summary>
     /// Whether there are validation errors
@@ -152,6 +157,17 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
         BrowseDestinationCommand = new RelayCommand<RuleStep>(BrowseDestination, step => step is not null);
         AcceptCommand = new RelayCommand(Accept, () => IsValid);
         CancelCommand = new RelayCommand(Cancel);
+        
+        // Subscribe to property changes to update command states
+        PropertyChanged += OnValidationPropertyChanged;
+    }
+    
+    private void OnValidationPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(IsValid))
+        {
+            ((RelayCommand)AcceptCommand).RaiseCanExecuteChanged();
+        }
     }
 
     /// <summary>
@@ -417,7 +433,7 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Validates all form fields
     /// </summary>
-    private void ValidateAll()
+    public void ValidateAll()
     {
         var errors = new List<string>();
         
@@ -440,18 +456,25 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
             errors.AddRange(patternErrors);
         }
         
-        // Validate steps
+        // Validate steps - refresh validation each time to avoid cached messages
         for (int i = 0; i < Steps.Count; i++)
         {
             var step = Steps[i];
-            var stepErrors = step.Validate();
+            var stepErrors = step.Validate(); // This gets fresh validation each time
             foreach (var error in stepErrors)
             {
                 errors.Add($"Step {i + 1}: {error}");
             }
         }
         
-        ValidationError = string.Join(Environment.NewLine, errors);
+        var newValidationError = string.Join(Environment.NewLine, errors);
+        
+        // Only update if the validation message actually changed to ensure UI refresh
+        if (ValidationError != newValidationError)
+        {
+            ValidationError = newValidationError;
+        }
+        
         OnPropertyChanged(nameof(IsValid));
         OnPropertyChanged(nameof(HasValidationError));
     }
@@ -479,8 +502,18 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void OnStepPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        // Re-validate when any step property changes
+        // Re-validate when any step property changes, especially Action changes
         ValidateAll();
+        
+        // Force UI refresh for validation-related properties
+        if (e.PropertyName == nameof(RuleStep.Action) || e.PropertyName == nameof(RuleStep.Destination) || e.PropertyName == nameof(RuleStep.NewName))
+        {
+            OnPropertyChanged(nameof(ValidationError));
+            OnPropertyChanged(nameof(HasValidationError));
+        }
+        
+        // Refresh command states
+        ((RelayCommand)AcceptCommand).RaiseCanExecuteChanged();
     }
 
     /// <summary>
@@ -488,6 +521,9 @@ public class RuleEditorViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void Dispose()
     {
+        // Unsubscribe from validation property changes
+        PropertyChanged -= OnValidationPropertyChanged;
+        
         // Unsubscribe from all step property changes to prevent memory leaks
         foreach (var step in Steps)
         {

@@ -759,18 +759,21 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Exits the application
     /// </summary>
-    private void ExitApplication()
+    private async void ExitApplication()
     {
         try
         {
-            // Stop monitoring first
-            _ = StopMonitoringAsync();
-            
-            // Let the application know we're intentionally shutting down
+            // Set shutdown flag first
             if (System.Windows.Application.Current is App app)
             {
                 app.IsShuttingDown = true;
             }
+            
+            // Stop monitoring and wait for it to complete
+            await StopMonitoringAsync();
+            
+            // Allow a brief moment for cleanup
+            await Task.Delay(100);
         }
         catch (Exception ex)
         {
@@ -779,8 +782,16 @@ public class MainViewModel : ViewModelBase, IDisposable
         }
         finally
         {
-            // Shut down the application
-            System.Windows.Application.Current.Shutdown();
+            // Force shutdown the application - this should terminate all processes
+            try
+            {
+                System.Windows.Application.Current.Shutdown(0);
+            }
+            catch
+            {
+                // If normal shutdown fails, force exit
+                Environment.Exit(0);
+            }
         }
     }
 

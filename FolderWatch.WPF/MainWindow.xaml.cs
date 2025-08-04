@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using FolderWatch.WPF.ViewModels;
 using MahApps.Metro.Controls;
+using Hardcodet.Wpf.TaskbarNotification;
 
 namespace FolderWatch.WPF;
 
@@ -10,12 +11,28 @@ namespace FolderWatch.WPF;
 /// </summary>
 public partial class MainWindow : MetroWindow
 {
+    private TaskbarIcon? _trayIcon;
+
     public MainWindow(MainViewModel viewModel)
     {
         InitializeComponent();
         
         // Set the DataContext to the injected MainViewModel
         DataContext = viewModel;
+        
+        // Initialize tray icon programmatically for better control
+        InitializeTrayIcon();
+    }
+
+    /// <summary>
+    /// Initialize the system tray icon
+    /// </summary>
+    private void InitializeTrayIcon()
+    {
+        if (FindResource("TrayIcon") is TaskbarIcon trayIcon)
+        {
+            _trayIcon = trayIcon;
+        }
     }
 
     /// <summary>
@@ -38,31 +55,48 @@ public partial class MainWindow : MetroWindow
     /// </summary>
     protected override void OnClosing(CancelEventArgs e)
     {
-        // Get if this is a real shutdown or just a minimize to tray
-        bool isRealShutdown = false;
-        
-        // Try to get the shutdown mode or use the exit command directly triggered
-        if (System.Windows.Application.Current is App app)
+        // Check if this is an explicit shutdown request
+        if (System.Windows.Application.Current is App app && app.IsShuttingDown)
         {
-            isRealShutdown = app.IsShuttingDown;
+            // Application is shutting down, clean up resources
+            DisposeTrayIcon();
+            
+            if (DataContext is MainViewModel vm)
+            {
+                vm.Dispose();
+            }
+            base.OnClosing(e);
+            return;
         }
-        
-        // Check if we should minimize to tray instead of closing
-        if (DataContext is MainViewModel viewModel && !isRealShutdown)
+
+        // For normal window close (X button), minimize to tray instead
+        if (DataContext is MainViewModel viewModel)
         {
-            // For normal window close, just hide instead of closing
             e.Cancel = true;
             Hide();
             return;
         }
 
-        // Application is shutting down, clean up resources
-        if (DataContext is MainViewModel vm)
-        {
-            vm.Dispose();
-        }
-
         base.OnClosing(e);
+    }
+
+    /// <summary>
+    /// Properly dispose of the tray icon
+    /// </summary>
+    private void DisposeTrayIcon()
+    {
+        try
+        {
+            if (_trayIcon is not null)
+            {
+                _trayIcon.Dispose();
+                _trayIcon = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error disposing tray icon: {ex.Message}");
+        }
     }
 
     /// <summary>

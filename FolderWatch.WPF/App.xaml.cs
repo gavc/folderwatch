@@ -52,13 +52,22 @@ public partial class App : System.Windows.Application
         // Set shutdown flag to inform other components
         IsShuttingDown = true;
         
-        if (_host is not null)
+        try
         {
-            await _host.StopAsync();
-            _host.Dispose();
+            if (_host is not null)
+            {
+                await _host.StopAsync(TimeSpan.FromSeconds(2)); // Give 2 seconds for graceful shutdown
+                _host.Dispose();
+            }
         }
-
-        base.OnExit(e);
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error during host shutdown: {ex.Message}");
+        }
+        finally
+        {
+            base.OnExit(e);
+        }
     }
 
     /// <summary>
