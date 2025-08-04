@@ -28,25 +28,6 @@
 
         <!-- Converters -->
         <local:RuleTypeConverter x:Key="RuleTypeConverter"/>
-
-        <!-- System Tray Icon -->
-        <tb:TaskbarIcon x:Key="TrayIcon"
-                        ToolTipText="FolderWatch - Click to open"
-                        Visibility="Visible"
-                        LeftClickCommand="{Binding ShowWindowCommand}"
-                        MenuActivation="RightClick">
-            <tb:TaskbarIcon.ContextMenu>
-                <ContextMenu>
-                    <MenuItem Header="Open" Command="{Binding ShowWindowCommand}" FontWeight="Bold"/>
-                    <Separator/>
-                    <MenuItem Header="Start Monitoring" Command="{Binding StartMonitoringCommand}" IsEnabled="{Binding CanStartMonitoring}"/>
-                    <MenuItem Header="Stop Monitoring" Command="{Binding StopMonitoringCommand}" IsEnabled="{Binding CanStopMonitoring}"/>
-                    <Separator/>
-                    <MenuItem Header="Settings..." Command="{Binding ShowSettingsCommand}"/>
-                    <MenuItem Header="Exit" Command="{Binding ExitApplicationCommand}"/>
-                </ContextMenu>
-            </tb:TaskbarIcon.ContextMenu>
-        </tb:TaskbarIcon>
     </mah:MetroWindow.Resources>
 
     <!-- Add Input Bindings for keyboard shortcuts -->
