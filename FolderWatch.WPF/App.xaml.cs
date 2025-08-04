@@ -74,7 +74,20 @@ public partial class App : System.Windows.Application
 
     /// <summary>
     /// Centralized shutdown method with comprehensive cleanup, logging, and safety timeout
+    /// 
+    /// This method coordinates the entire application shutdown process:
+    /// 1. Sets thread-safe shutdown flag to prevent multiple shutdown attempts
+    /// 2. Disposes MainViewModel and all its resources (FileMonitorService, event subscriptions)
+    /// 3. Closes MainWindow and disposes tray icon properly
+    /// 4. Stops and disposes the dependency injection host
+    /// 5. Verifies resource cleanup completion
+    /// 6. Implements 10-second safety timeout to force exit if graceful shutdown hangs
+    /// 7. Provides comprehensive logging for troubleshooting
+    /// 
+    /// All exit paths (menu, tray icon, keyboard shortcuts) should use this method
+    /// to ensure consistent and reliable application termination.
     /// </summary>
+    /// <returns>True if shutdown completed successfully, false if timeout occurred</returns>
     public async Task<bool> InitiateShutdownAsync()
     {
         // Thread-safe check to prevent multiple shutdown attempts
@@ -156,9 +169,16 @@ public partial class App : System.Windows.Application
                 disposableViewModel.Dispose();
             }
             
-            // Dispose of the main window itself
+            // Dispose of the main window itself (implements IDisposable)
             LogShutdown("Disposing MainWindow");
-            mainWindow?.Close();
+            if (mainWindow is IDisposable disposableWindow)
+            {
+                disposableWindow.Dispose();
+            }
+            else
+            {
+                mainWindow?.Close();
+            }
             
             LogShutdown("Stopping host services");
             

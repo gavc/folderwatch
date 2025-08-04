@@ -765,6 +765,9 @@ public class MainViewModel : ViewModelBase, IDisposable
         {
             System.Diagnostics.Debug.WriteLine("Exit application requested");
             
+            // Provide visual feedback to user
+            StatusMessage = "Shutting down...";
+            
             if (System.Windows.Application.Current is App app)
             {
                 // Use the centralized shutdown method with comprehensive cleanup
@@ -781,6 +784,8 @@ public class MainViewModel : ViewModelBase, IDisposable
         {
             // Log error and force exit as last resort
             System.Diagnostics.Debug.WriteLine($"ERROR during exit application: {ex.Message}");
+            StatusMessage = "Shutdown error - forcing exit";
+            
             try
             {
                 Environment.Exit(1);
