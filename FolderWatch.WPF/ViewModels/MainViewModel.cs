@@ -757,30 +757,44 @@ public class MainViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Exits the application
+    /// Exits the application using centralized shutdown logic
     /// </summary>
-    private void ExitApplication()
+    private async void ExitApplication()
     {
         try
         {
-            // Stop monitoring first
-            _ = StopMonitoringAsync();
+            System.Diagnostics.Debug.WriteLine("Exit application requested");
             
-            // Let the application know we're intentionally shutting down
+            // Provide visual feedback to user
+            StatusMessage = "Shutting down...";
+            
             if (System.Windows.Application.Current is App app)
             {
-                app.IsShuttingDown = true;
+                // Use the centralized shutdown method with comprehensive cleanup
+                await app.InitiateShutdownAsync();
+            }
+            else
+            {
+                // Fallback if app reference is not available
+                System.Diagnostics.Debug.WriteLine("WARNING: App reference not available, using fallback exit");
+                Environment.Exit(0);
             }
         }
         catch (Exception ex)
         {
-            // Log any errors but continue with shutdown
-            System.Diagnostics.Debug.WriteLine($"Error during shutdown: {ex.Message}");
-        }
-        finally
-        {
-            // Shut down the application
-            System.Windows.Application.Current.Shutdown();
+            // Log error and force exit as last resort
+            System.Diagnostics.Debug.WriteLine($"ERROR during exit application: {ex.Message}");
+            StatusMessage = "Shutdown error - forcing exit";
+            
+            try
+            {
+                Environment.Exit(1);
+            }
+            catch
+            {
+                // Ultimate fallback
+                Environment.FailFast("Application exit failed completely");
+            }
         }
     }
 
@@ -791,21 +805,45 @@ public class MainViewModel : ViewModelBase, IDisposable
     {
         if (!_disposed)
         {
-            // Unsubscribe from events to prevent memory leaks
-            _ruleService.RuleActionLogged -= OnRuleActionLogged;
-            _fileMonitorService.MonitoringStatusChanged -= OnMonitoringStatusChanged;
-            _fileMonitorService.FileEventLogged -= OnFileEventLogged;
-
-            // Stop monitoring to ensure FileSystemWatcher is cleaned up
-            _ = StopMonitoringAsync();
-
-            // If FileMonitorService is IDisposable, dispose it here
-            if (_fileMonitorService is IDisposable disposableService)
+            System.Diagnostics.Debug.WriteLine("Disposing MainViewModel");
+            
+            try
             {
-                disposableService.Dispose();
-            }
+                // Unsubscribe from events to prevent memory leaks
+                _ruleService.RuleActionLogged -= OnRuleActionLogged;
+                _fileMonitorService.MonitoringStatusChanged -= OnMonitoringStatusChanged;
+                _fileMonitorService.FileEventLogged -= OnFileEventLogged;
 
-            _disposed = true;
+                // Stop monitoring to ensure FileSystemWatcher is cleaned up
+                _ = Task.Run(async () => 
+                {
+                    try 
+                    { 
+                        await StopMonitoringAsync(); 
+                        System.Diagnostics.Debug.WriteLine("Monitoring stopped during disposal");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error stopping monitoring during disposal: {ex.Message}");
+                    }
+                });
+
+                // If FileMonitorService is IDisposable, dispose it here
+                if (_fileMonitorService is IDisposable disposableService)
+                {
+                    disposableService.Dispose();
+                    System.Diagnostics.Debug.WriteLine("FileMonitorService disposed");
+                }
+
+                _disposed = true;
+                System.Diagnostics.Debug.WriteLine("MainViewModel disposed successfully");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error during MainViewModel disposal: {ex.Message}");
+            }
         }
+        
+        GC.SuppressFinalize(this);
     }
 }

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 using FolderWatch.WPF.Models;
 using FolderWatch.WPF.ViewModels;
 using MahApps.Metro.Controls;
@@ -51,6 +52,30 @@ public partial class RuleEditorDialog : MetroWindow
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         _viewModel.Dispose();
         base.OnClosed(e);
+    }
+
+    /// <summary>
+    /// Handles OK button click
+    /// </summary>
+    private void OkButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Validate the form
+        _viewModel.ValidateAll();
+        
+        if (_viewModel.IsValid)
+        {
+            DialogResult = true;
+            Close();
+        }
+    }
+
+    /// <summary>
+    /// Handles Cancel button click
+    /// </summary>
+    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        DialogResult = false;
+        Close();
     }
 
     /// <summary>
